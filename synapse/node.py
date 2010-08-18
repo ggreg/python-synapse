@@ -51,13 +51,8 @@ class Node(object):
     """Node abstract interface.
     A node is part of a network e.g. a graph that connects objects. It can
     receive messages from or send messages to other nodes connected by an edge.
-    :meth:`setup` is called to configure the specific underlying protocol.
 
     """
-    def setup(self):
-        raise NotImplementedError()
-
-
     def send(self, dst, msg):
         raise NotImplementedError()
 
@@ -125,12 +120,6 @@ class AnnounceServer(object):
         self._nodes = {}
 
 
-    def setup(self):
-        self._server.setup()
-        self._publisher.setup()
-        return self
-
-
     def start(self):
         self._publisher.start()
         self._server.start(self.handle_message)
@@ -173,12 +162,12 @@ class AnnounceClient(object):
                 'uri':  config['uri'],
                 'role': 'client'
                 })
+        self._handler = handler
 
 
     def connect(self):
-        self._subscriber.setup()
         self._subscriber.connect(self.handle_announce)
-        self._client.setup().connect()
+        self._client.connect()
 
 
     def send_to(self, dst, msg):
@@ -279,27 +268,21 @@ def makeNode(config):
 
 
 class ZMQServer(ZMQNode):
-    def setup(self):
+    def start(self, handler):
         self._socket = _context.socket(zmq.REP)
         self._socket.bind(self._uri)
-        return self
+        self._handler = handler
+        _loop.add_recv_handler(self._socket, self._handler)
 
 
-    def start(self, handler):
-        if not self._socket:
-            self.setup()
-        _loop.add_recv_handler(self._socket, handler)
-
+    def __del__(self):
+        if self._socket:
+            _loop.del_handler(self._socket)
 
 
 class ZMQClient(ZMQNode):
-    def setup(self):
-        self._socket = _context.socket(zmq.REQ)
-        return self
-
     def connect(self):
-        if not self._socket:
-            self.setup()
+        self._socket = _context.socket(zmq.REQ)
         self._socket.connect(self._uri)
 
 
@@ -315,14 +298,8 @@ class ZMQPublish(ZMQNode):
     any handler as the publisher produces messages.
 
     """
-    def setup(self):
-        self._socket = _context.socket(zmq.PUB)
-        return self
-
-
     def start(self):
-        if not self._socket:
-            self.setup()
+        self._socket = _context.socket(zmq.PUB)
 
 
     def recv(self):
@@ -338,19 +315,19 @@ class ZMQSubscribe(ZMQNode):
     be called when a message arrives. Support only :meth:`recv`.
 
     """
-    def setup(self):
+    def connect(self, handler):
         self._socket = _context.socket(zmq.SUB)
         self._socket.bind(self._uri)
-        return self
-
-
-    def connect(self, handler):
-        if not self._socket:
-            self.setup()
         self._socket.connect(self._uri)
         self._socket.setsockopt(zmq.SUBSCRIBE, '')
-        _loop.add_recv_handler(self._socket, handler)
+        self._handler = handler
+        _loop.add_recv_handler(self._socket, self._handler)
 
 
     def send(self, msg):
         raise NotImplementedError()
+
+
+    def __del__(self):
+        if self._socket:
+            _loop.del_handler(self._socket)
