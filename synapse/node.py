@@ -126,7 +126,7 @@ class Actor(object):
                 'role': 'server'
                 })
         self._announce = AnnounceClient(config)
-        self.nodes = NodeDirectory()
+        self.nodes = NodeDirectory(config)
 
 
     def connect(self):
