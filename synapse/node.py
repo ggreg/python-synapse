@@ -63,6 +63,12 @@ class Node(object):
 
 
 class NodeDirectory(object):
+    """Stores a node name -> Node object mapping
+
+    A node name is mappend to a single Node object. The Node object is
+    instanciated from an URI by :meth:`add`.
+
+    """
     def __init__(self, config):
         self._config = {
             'type': config['type'],
@@ -80,20 +86,15 @@ class NodeDirectory(object):
 
 
     def add(self, name, uri):
-        if name not in self._nodes:
-            self._nodes[name] = []
-        node = makeNode({
+        self._nodes[name] = makeNode({
                 'type': self._config['type'],
                 'role': self._config['role'],
                 'uri':  uri
                 })
-        self_nodes[name].append(node)
 
 
     def remove(self, name, uri):
-        self._nodes[name].remove(uri)
-        if not self._nodes[name]:
-            del self._nodes[name]
+        del self._nodes[name]
 
 
 
