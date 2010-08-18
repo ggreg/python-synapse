@@ -116,13 +116,40 @@ class Actor(object):
     """
     def __init__(self, config):
         self._uri = config['uri']
+        self._codec = makeCodec({
+                'type': config['codec']
+                })
         self._mailbox = makeNode({
                 'type': config['type'],
                 'uri':  self._uri,
                 'role': 'server'
                 })
-        self._announce = AnnounceClient(config['announce'])
-        self.nodes = {}
+        self._announce = AnnounceClient(config)
+        self.nodes = NodeDirectory()
+
+
+    def connect(self):
+        self._mailbox.connect(on_message)
+        self._announce.connect()
+
+
+    def sendrecv(self, node_name, msg):
+        remote = self.nodes[node_name]
+        remote.send(msg)
+        reply = remote.recv(msg)
+
+
+    def on_message(self, socket, events):
+        msgstring = socket.recv()
+        request = self._codec(msgstring)
+        raise NotImplementedError()
+
+
+    def on_announce(self, msg):
+        if msg['type'] == 'hello':
+            self.nodes.add(msg['src'], msg['uri'])
+        if msg['type'] == 'bye':
+            self.nodes.remove(msg['src'], msg['uri'])
 
 
 
