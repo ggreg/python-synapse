@@ -28,6 +28,10 @@ class EventLoop(object):
         self._loop.add_handler(socket, handler, zmq.POLLIN)
 
 
+    def del_handler(self, handler):
+        self._loop.remove_handler(handler)
+
+
     def start(self):
         if not self._is_started:
             if self._thread:
