@@ -62,6 +62,41 @@ class Node(object):
 
 
 
+class NodeDirectory(object):
+    def __init__(self, config):
+        self._config = {
+            'type': config['type'],
+            'role': 'client'
+            }
+        self._nodes = {}
+
+
+    def __contains__(self, name):
+        return self._nodes.__contains__(name)
+
+
+    def __getitem__(self, name):
+        return self._nodes[name]
+
+
+    def add(self, name, uri):
+        if name not in self._nodes:
+            self._nodes[name] = []
+        node = makeNode({
+                'type': self._config['type'],
+                'role': self._config['role'],
+                'uri':  uri
+                })
+        self_nodes[name].append(node)
+
+
+    def remove(self, name, uri):
+        self._nodes[name].remove(uri)
+        if not self._nodes[name]:
+            del self._nodes[name]
+
+
+
 class Actor(object):
     """
     An actor receives messages in its mailbox.
