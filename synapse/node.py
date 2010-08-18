@@ -210,7 +210,7 @@ class AnnounceClient(object):
     - `codec`
 
     """
-    def __init__(self, config):
+    def __init__(self, config, handler):
         self._codec = makeCodec({
                 'type': config['codec']
                 })
@@ -259,7 +259,9 @@ class AnnounceClient(object):
 
 
     def handle_announce(self, socket, events):
-        print socket.recv()
+        msgstring = socket.recv()
+        request = self._codec.loads(msgstring)
+        self._handler(request)
 
 
 
