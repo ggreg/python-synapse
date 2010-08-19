@@ -16,12 +16,7 @@ class HelloMessage(Message):
 
 
     @property
-    def msgtype(self):
-        return self.type
-
-
-    @property
-    def msgattrs(self):
+    def attrs(self):
         return {
             'src': self.src,
             'uri': self.uri}
@@ -42,6 +37,12 @@ class ByeMessage(Message):
         self.src = src
 
 
+    @property
+    def attrs(self):
+        return {
+            'src': self.src}
+
+
 
 class WhereIsMessage(Message):
     type = 'where_is'
@@ -50,11 +51,24 @@ class WhereIsMessage(Message):
         self.uri = params['uri']
 
 
+    @property
+    def attrs(self):
+        return {
+            'src': self.src,
+            'uri': self.uri}
+
+
 
 class AckMessage(Message):
     type = 'ack'
     def __init__(self, src):
         self.src = src
+
+
+    @property
+    def attrs(self):
+        return {
+            'src': self.src}
 
 
 
@@ -95,8 +109,8 @@ class MessageCodecJSONRPC(MessageCodec):
 
     def dumps(self, msg):
         jsonrpc_msg = {
-            'method': msg.msgtype,
-            'params': msg.msgattrs,
+            'method': msg.type,
+            'params': msg.attrs,
             'id': self.ids.next()}
 
         return json.dumps(jsonrpc_msg)
