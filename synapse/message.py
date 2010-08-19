@@ -46,7 +46,8 @@ class ByeMessage(Message):
 class WhereIsMessage(Message):
     type = 'where_is'
     def __init__(self, src, params):
-        pass
+        self.src = src
+        self.uri = params['uri']
 
 
 
