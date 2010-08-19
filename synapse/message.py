@@ -54,6 +54,20 @@ class WhereIsMessage(Message):
     def attrs(self):
         return {
             'name': self.name}
+
+
+
+class IsAtMessage(Message):
+    type = 'is_at'
+    def __init__(self, name, uri):
+        self.name = name
+        self.uri = uri
+
+
+    @property
+    def attrs(self):
+        return {
+            'name': self.name,
             'uri': self.uri}
 
 
