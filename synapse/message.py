@@ -50,6 +50,13 @@ class WhereIsMessage(Message):
 
 
 
+class AckMessage(Message):
+    type = 'ack'
+    def __init__(self, src):
+        self.src = src
+
+
+
 class MessageCodec(object):
     def loads(self, msgstring):
         raise NotImplementedError()
