@@ -12,7 +12,7 @@ messages to other actor as well as spawning other actors.
 An :class:`Actor` is identified by its *name*. It is a string used to localize
 the actor. The actor maintains a :class:`NodeDirectory` that maps a name to an
 :class:`Actor`'s :class:`node`. A :class:`node` is a unit of communication. It
-provides :meth:`send` and :meth:`recv` methods to exhange messages with other
+provides :meth:`send` and :meth:`recv` methods to exchange messages with other
 nodes.
 
 Start an :class:`AnnounceServer`
@@ -21,19 +21,19 @@ Start an :class:`AnnounceServer`
 The first step is to start an :class:`AnnounceServer`: ::
 
     from synapse import node
-    
+
     ann_config = {
         'type': 'zmq', 'codec': 'jsonrpc',
         'announce': {
             'server_uri': 'ipc:///tmp/ann_server.unix',
             'pubsub_uri': 'ipc:///tmp/ann_pubsub.unix'}}
-     
+
     ann_server = node.AnnounceServer(ann_config)
 
-The :class:`AnnounceServer` should be run in a dedicated and monitored. I use a
-simple supervisor process that forks childs and monitors then. When it catches
-a SIGCHLD, it logs the process that terminated and calls a callback. The
-callback may restart the process.
+The :class:`AnnounceServer` should be run in a dedicated and monitored process.
+I use a simple supervisor process that forks childs and monitors then. When it
+catches a SIGCHLD, it logs the process that terminated and calls a callback.
+The callback may restart the process.
 
 .. note:: the announce service is similar to DNS. Basically, DNS maps a name to
    an IP while the announce service maps a name to an URI. Though NAPTR DNS
