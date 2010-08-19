@@ -204,6 +204,7 @@ class Actor(object):
             replystring = self._codec.dumps(reply)
         else:
             replystring = self._codec.dumps(AckMessage(self._mailbox.name))
+        socket.send(replystring)
 
 
     def on_announce(self, msg):
