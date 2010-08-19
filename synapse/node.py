@@ -156,9 +156,11 @@ class Actor(object):
     - `nodes`: list of other nodes
     - `announce`: subscribed queue of announces where new nodes introduce
       themselves
+    - `handler`: callable called when a message is received
 
     """
     def __init__(self, config, handler):
+        self._handler = handler
         self._uri = config['uri']
         self._codec = makeCodec({
                 'type': config['codec']
@@ -197,7 +199,7 @@ class Actor(object):
     def on_message(self, socket, events):
         msgstring = socket.recv()
         request = self._codec.loads(msgstring)
-        reply = self.handler(request)
+        reply = self._handler(request)
         if reply:
             replystring = self._codec.dumps(reply)
         else:
