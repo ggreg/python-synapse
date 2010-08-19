@@ -33,6 +33,7 @@ systems. If you have several tasks to run and some tasks block, you waste CPU
 time. Then you need to switch execution between tasks when they block.
 
 """
+import logging
 import zmq
 
 from message import makeMessage, makeCodec, \
@@ -188,6 +189,7 @@ class Actor(object):
         self._mailbox.start(self.on_message)
         self._announce.connect()
         self._announce.hello(self._mailbox)
+        logging.debug('%s connected' % self.name)
 
 
     def sendrecv(self, node_name, msg):
@@ -199,6 +201,7 @@ class Actor(object):
     def on_message(self, socket, events):
         msgstring = socket.recv()
         request = self._codec.loads(msgstring)
+        logging.debug('handling message in %s' % self.name)
         reply = self._handler(self, request)
         if reply:
             replystring = self._codec.dumps(reply)
@@ -255,7 +258,7 @@ class AnnounceServer(object):
         msgstring = socket.recv()
         msg = self._codec.loads(msgstring)
         if msg.type == 'hello':
-            print 'hello from %s' % msg.src
+            logging.debug('DEBUG hello from %s' % msg.src)
             self._nodes.add(msg.src, msg.uri)
             reply = AckMessage(self._server.name)
         if msg.type == 'bye':
