@@ -41,6 +41,14 @@ from message import makeMessage, makeCodec, \
 
 
 class EventLoop(object):
+    """Loop that checks events on file descriptors.
+
+    Use :meth:`add_recv_handler` to add on handler on a file descriptor
+    incoming events e.g. when it is ready to receive data. Then call
+    :methd:`start` to start handling events. It will run a polling loop that
+    blocks until a event is triggered.
+
+    """
     def __init__(self, run_in_thread=False):
         from zmq.eventloop import ioloop
         self._loop = ioloop.IOLoop.instance()
@@ -52,6 +60,10 @@ class EventLoop(object):
 
 
     def add_recv_handler(self, socket, handler):
+        """add a handler that will be triggered when the file descriptor is
+        ready to receive data.
+
+        """
         self._loop.add_handler(socket, handler, zmq.POLLIN)
 
 
@@ -60,6 +72,10 @@ class EventLoop(object):
 
 
     def start(self):
+        """start the polling loop to handler events. Blocks the process until a
+        event is triggered.
+
+        """
         if not self._is_started:
             if self._thread:
                 self._thread.start()
