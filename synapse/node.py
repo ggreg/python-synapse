@@ -9,7 +9,7 @@ allows to handle multiple requests in a single requests.
 import zmq
 
 from message import makeMessage, makeCodec, \
-                    HelloMessage, ByeMessage, WhereIsMessage
+                    HelloMessage, ByeMessage, WhereIsMessage, AckMessage
 
 
 
@@ -115,7 +115,7 @@ class Actor(object):
       themselves
 
     """
-    def __init__(self, config):
+    def __init__(self, config, handler):
         self._uri = config['uri']
         self._codec = makeCodec({
                 'type': config['codec']
@@ -125,12 +125,12 @@ class Actor(object):
                 'uri':  self._uri,
                 'role': 'server'
                 })
-        self._announce = AnnounceClient(config)
+        self._announce = AnnounceClient(config, self.on_announce)
         self.nodes = NodeDirectory(config)
 
 
     def connect(self):
-        self._mailbox.connect(on_message)
+        self._mailbox.start(self.on_message)
         self._announce.connect()
 
 
@@ -142,8 +142,12 @@ class Actor(object):
 
     def on_message(self, socket, events):
         msgstring = socket.recv()
-        request = self._codec(msgstring)
-        raise NotImplementedError()
+        request = self._codec.loads(msgstring)
+        reply = self.handler(request)
+        if reply:
+            replystring = self._codec.dumps(reply)
+        else:
+            replystring = self._codec.dumps(AckMessage(self._mailbox))
 
 
     def on_announce(self, msg):
@@ -191,7 +195,6 @@ class AnnounceServer(object):
     def handle_message(self, socket, events):
         msgstring = socket.recv()
         msg = self._codec.loads(msgstring)
-        print msg.type
         socket.send('ack')
 
 
