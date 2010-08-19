@@ -36,7 +36,8 @@ time. Then you need to switch execution between tasks when they block.
 import zmq
 
 from message import makeMessage, makeCodec, \
-                    HelloMessage, ByeMessage, WhereIsMessage, AckMessage
+                    HelloMessage, ByeMessage, \
+                    WhereIsMessage, IsAtMessage, AckMessage
 
 
 
@@ -256,9 +257,14 @@ class AnnounceServer(object):
         if msg.type == 'hello':
             print 'hello from %s' % msg.src
             self._nodes.add(msg.src, msg.uri)
+            reply = AckMessage(self._server.name)
         if msg.type == 'bye':
             self._nodes.remove(msg.src, msg.uri)
-        socket.send(self._codec.dumps(AckMessage(self._server.name)))
+            reply = AckMessage(self._server.name)
+        if msg.type == 'where_is':
+            node = self._nodes[msg.name]
+            reply = IsAtMessage(msg.name, node.uri)
+        socket.send(self._codec.dumps(reply))
 
 
 
@@ -319,8 +325,8 @@ class AnnounceClient(object):
         return self.recv_from(self._client)
 
 
-    def where_is(node_name):
-        msg = WhereIsMessage(node.name, params={'who': other_node_name})
+    def where_is(self, other_node_name):
+        msg = WhereIsMessage(other_node_name)
         self.send_to(self._client, msg)
         return self.recv_from(self._client)
 
