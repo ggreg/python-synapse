@@ -3,7 +3,34 @@ Provides Node and Actor.
 
 All objects share the same global _context and _loop. Non-blocking and
 asynchronous events handler are registered in the global _loop. The event loop
-allows to handle multiple requests in a single requests.
+allows to handle multiple requests in a single process. However internally
+EventLoop.start() blocks on a poll().
+
+You may start the loop in a dedicated thread if you need to compute in
+parallel. In this case you must handle concurrent access to data. This module
+does not protect data against concurrent access. Hence it will be hard to
+implement fine-grained locking. With no thread (but the main process one), you
+must start the loop after having setup every nodes or actor.
+
+Instead of Python threads, greenlets of other cooperative light-processes can
+help you to avoid concurrent accesses. In this case you need to manage the
+scheduling between light-processes and to check the polling status sometimes.
+
+With a single process, everything is sequential. Consequently an actor
+handles one request at a time. Let consider you have the light-processes. The
+first runs computations and the second runs the polling loop. Computations need
+data to run. Then it switches execution to the polling loop. The polling loop
+waits until a new incoming request arrives. This is not an issue since no
+request implies no computation. Now imagine a request arrives. It unblocks the
+polling loop. Then the pooling loop sets a flag and switch the execution to the
+computation loop. The computation runs until its end while requests accumulate
+into the socket buffer. When the computation is finished, it switches execution
+to the polling loop.
+
+It's simple cooperative multitasking. What happens if the computation blocks on
+I/O? CPU time is wasted. It is the issue that brought multitasking to operation
+systems. If you have several tasks to run and some tasks block, you waste CPU
+time. Then you need to switch execution between tasks when they block.
 
 """
 import zmq
