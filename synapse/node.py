@@ -158,6 +158,7 @@ class Actor(object):
     - `nodes`: list of other nodes
     - `announce`: subscribed queue of announces where new nodes introduce
       themselves
+    - `handler`: callable called when a message is received
 
     """
     def __init__(self, config, handler):
@@ -177,6 +178,11 @@ class Actor(object):
 
 
     def __del__(self):
+        """
+        Send a *bye* message to the :class:`AnnounceServer` when the
+        :class:`Actor` object is destroyed.
+
+        """
         self._announce.bye(self)
 
 
@@ -199,6 +205,14 @@ class Actor(object):
 
 
     def on_message(self, socket, events):
+        """
+        :meth:`on_message` is called by the :class:`EventLoop` when the socket
+        is ready to receive data. The request is loaded by the codec, call the
+        handler, and send back the handler's return. If the handler returns None,
+        a :class:`AckMessage` is used. With a REQ/REP socket, when a request is
+        received, you **have** to send back a response.
+
+        """
         msgstring = socket.recv()
         request = self._codec.loads(msgstring)
         logging.debug('handling message in %s' % self.name)
@@ -211,9 +225,14 @@ class Actor(object):
 
 
     def on_announce(self, msg):
+        """
+        Handler called by the :class:`AnnounceClient` when it receives an
+        announce for a :class:`Node`.
+
+        """
         if msg.type == 'hello':
             self._nodes.add(msg.src, msg.uri)
-        if msg['type'] == 'bye':
+        if msg.type == 'bye':
             self._nodes.remove(msg.src, msg.uri)
 
 
