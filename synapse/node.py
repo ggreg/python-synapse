@@ -121,12 +121,18 @@ class Actor(object):
                 'type': config['codec']
                 })
         self._mailbox = makeNode({
+                'name': config['name'],
                 'type': config['type'],
                 'uri':  self._uri,
                 'role': 'server'
                 })
         self._announce = AnnounceClient(config, self.on_announce)
         self.nodes = NodeDirectory(config)
+
+
+    @property
+    def name(self):
+        return self._mailbox.name
 
 
     def connect(self):
@@ -278,8 +284,14 @@ class ZMQNode(Node):
     type = 'zmq'
 
     def __init__(self, config):
+        self._name = config.get('name', '')
         self._uri = config['uri']
         self._socket = None
+
+
+    @property
+    def name(self):
+        return self._name
 
 
     @property
