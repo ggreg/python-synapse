@@ -205,8 +205,8 @@ class Actor(object):
 
 
     def on_announce(self, msg):
-        if msg['type'] == 'hello':
-            self.nodes.add(msg['src'], msg['uri'])
+        if msg.type == 'hello':
+            self._nodes.add(msg.src, msg.uri)
         if msg['type'] == 'bye':
             self.nodes.remove(msg['src'], msg['uri'])
 
@@ -249,7 +249,12 @@ class AnnounceServer(object):
     def handle_message(self, socket, events):
         msgstring = socket.recv()
         msg = self._codec.loads(msgstring)
-        socket.send('ack')
+        if msg.type == 'hello':
+            print 'hello from %s' % msg.src
+            self._nodes.add(msg.src, msg.uri)
+        if msg.type == 'bye':
+            self._nodes.remove(msg.src, msg.uri)
+        socket.send(self._codec.dumps(AckMessage(self._server.name)))
 
 
 
