@@ -130,6 +130,10 @@ class Actor(object):
         self.nodes = NodeDirectory(config)
 
 
+    def __del__(self):
+        self._announce.bye(self)
+
+
     @property
     def name(self):
         return self._mailbox.name
@@ -138,6 +142,7 @@ class Actor(object):
     def connect(self):
         self._mailbox.start(self.on_message)
         self._announce.connect()
+        self._announce.hello(self._mailbox)
 
 
     def sendrecv(self, node_name, msg):
