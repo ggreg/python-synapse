@@ -39,7 +39,7 @@ class HelloMessage(Message):
 class ByeMessage(Message):
     type = 'bye'
     def __init__(self, src):
-        pass
+        self.src = src
 
 
 
