@@ -1,0 +1,5 @@
+type: zmq
+codec: jsonrpc
+announce:
+    server_uri: 'ipc://./test_ann_server.unix'
+    pubsub_uri: 'ipc://./test_ann_pubsub.unix'
