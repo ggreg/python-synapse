@@ -170,7 +170,7 @@ class Actor(object):
                 'role': 'server'
                 })
         self._announce = AnnounceClient(config, self.on_announce)
-        self.nodes = NodeDirectory(config)
+        self._nodes = NodeDirectory(config)
 
 
     def __del__(self):
@@ -201,14 +201,14 @@ class Actor(object):
         if reply:
             replystring = self._codec.dumps(reply)
         else:
-            replystring = self._codec.dumps(AckMessage(self._mailbox))
+            replystring = self._codec.dumps(AckMessage(self._mailbox.name))
 
 
     def on_announce(self, msg):
         if msg.type == 'hello':
             self._nodes.add(msg.src, msg.uri)
         if msg['type'] == 'bye':
-            self.nodes.remove(msg['src'], msg['uri'])
+            self._nodes.remove(msg.src, msg.uri)
 
 
 
@@ -229,16 +229,18 @@ class AnnounceServer(object):
                 'type': config['codec']
                 })
         self._server = makeNode({
+                'name': 'announce:server',
                 'type': config['type'],
-                'uri':  config['uri'],
+                'uri':  config['announce']['server_uri'],
                 'role': 'server'
                 })
         self._publisher = makeNode({
+                'name': 'announce:publisher',
                 'type': config['type'],
-                'uri':  config['announce']['uri'],
+                'uri':  config['announce']['pubsub_uri'],
                 'role': 'publish'
                 })
-        self._nodes = {}
+        self._nodes = NodeDirectory(config)
 
 
     def start(self):
