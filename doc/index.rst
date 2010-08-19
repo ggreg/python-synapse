@@ -8,10 +8,12 @@ Welcome to python-synapse's documentation!
 
 Contents:
 
-    quickstart
 
 .. toctree::
    :maxdepth: 2
+   :glob:
+
+   quickstart/index
 
 Indices and tables
 ==================

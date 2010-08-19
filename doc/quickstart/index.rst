@@ -1,5 +1,5 @@
-Python-synapse Quickstart
-*************************
+Quickstart
+**********
 
 Introduction
 ============
