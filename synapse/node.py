@@ -171,6 +171,7 @@ class Actor(object):
                 })
         self._announce = AnnounceClient(config, self.on_announce)
         self._nodes = NodeDirectory(config)
+        self._handler = handler
 
 
     def __del__(self):
@@ -197,11 +198,12 @@ class Actor(object):
     def on_message(self, socket, events):
         msgstring = socket.recv()
         request = self._codec.loads(msgstring)
-        reply = self.handler(request)
+        reply = self._handler(self, request)
         if reply:
             replystring = self._codec.dumps(reply)
         else:
             replystring = self._codec.dumps(AckMessage(self._mailbox.name))
+        socket.send(replystring)
 
 
     def on_announce(self, msg):
