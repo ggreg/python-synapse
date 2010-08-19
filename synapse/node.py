@@ -210,7 +210,7 @@ class Actor(object):
     def on_announce(self, msg):
         if msg.type == 'hello':
             self._nodes.add(msg.src, msg.uri)
-        if msg['type'] == 'bye':
+        if msg.type == 'bye':
             self._nodes.remove(msg.src, msg.uri)
 
 
