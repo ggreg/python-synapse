@@ -48,12 +48,14 @@ def forwarder_handler(self, msg):
 
 
 def seed():
-    client = node.makeNode({'type': 'zmq', 'uri': 'ipc://./tests/test1.unix', 'role': 'client'})
+    client = node.makeNode({'type': 'zmq', 'uri': 'ipc://./test1.unix', 'role': 'client'})
     codec = message.makeCodec({'type': 'jsonrpc'})
     msg = codec.dumps(message.makeMessage({'type': 'hello', 'src': 'tester', 'uri': ''}))
     client.connect()
+    logging.debug('seed: connected to forwarder node')
     client.send(msg)
-    logging.debug('seed: %s' % client.recv())
+    logging.debug('seed: message sent')
+    logging.debug('seed: message received (%s)' % client.recv())
 
 
 
