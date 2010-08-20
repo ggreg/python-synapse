@@ -16,3 +16,7 @@ service and broadcast to all other nodes by a pub/sub queue.
 
 Currently it supports Zeromq as the underlying protocol and JSON-RPC to encode
 and decode messages.
+
+Read doc/quickstart for a practical introduction. As documentation in doc/ is
+in Sphinx format, type ``make`` in the directory to see how to build it in HTML
+or PDF.
