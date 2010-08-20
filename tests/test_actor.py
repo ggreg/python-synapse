@@ -29,14 +29,14 @@ def echo_reply_handler(self, msg):
 
 
 def forwarder_handler(self, msg):
-    dstname = 'test2'
+    dstname = actor_config2['name']
     try:
         dst = self._nodes[dstname]
     except KeyError:
         uri = self._announce.where_is(dstname).uri
         logging.debug('forwarder_handler: %s is at %s' % (dstname, uri))
-        self._nodes.add('test2', uri)
-        dst = self._nodes['test2']
+        self._nodes.add(dstname, uri)
+        dst = self._nodes[dstname]
     finally:
         msg.src = self.name
         dst.connect()
@@ -48,7 +48,8 @@ def forwarder_handler(self, msg):
 
 
 def seed():
-    client = node.makeNode({'type': 'zmq', 'uri': 'ipc://./test1.unix', 'role': 'client'})
+    common_config = yaml.load(file('config.yaml'))
+    client = node.makeNode({'type': common_config['type'], 'uri': actor_config1['uri'], 'role': 'client'})
     codec = message.makeCodec({'type': 'jsonrpc'})
     msg = codec.dumps(message.makeMessage({'type': 'hello', 'src': 'tester', 'uri': ''}))
     client.connect()
