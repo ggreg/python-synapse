@@ -38,12 +38,12 @@ def forwarder_handler(self, msg):
         self._nodes.add('test2', uri)
         dst = self._nodes['test2']
     finally:
-        msg.src = self.name 
+        msg.src = self.name
         dst.connect()
         dst.send(self._codec.dumps(msg))
-        logging.debug('forwarder_handler: message #%d forwarded' % msg.id)
+        logging.debug('forwarder_handler: message forwarded')
         reply = dst.recv()
-        return reply
+        return self._codec.loads(reply)
 
 
 
@@ -66,7 +66,7 @@ def test_actor():
 
     announcer_process = subprocess.Popen(['./start_announcer.py'])
 
-    a1 = node.Actor(actor_config1, echo_reply_handler)
+    a1 = node.Actor(actor_config1, forwarder_handler)
     a1.connect()
     loop1 = node._loop
     t1 = threading.Thread(target=loop1.start)
