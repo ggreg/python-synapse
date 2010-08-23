@@ -131,11 +131,19 @@ class NodeDirectory(object):
 
 
     def add(self, name, uri):
+        """Add a new node to the directory, and if the node is not
+        already connected, connect to it
+
+        """
         self._nodes[name] = makeNode({
                 'type': self._config['type'],
                 'role': self._config['role'],
                 'uri':  uri
                 })
+        s = self._nodes[name].socket
+        if not s or s.closed:
+            self._nodes[name].connect()
+        return self._nodes[name]
 
 
     def remove(self, name, uri):
