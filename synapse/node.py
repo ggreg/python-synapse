@@ -110,7 +110,7 @@ class Node(object):
 class NodeDirectory(object):
     """Stores a node name -> Node object mapping
 
-    A node name is mappend to a single Node object. The Node object is
+    A node name is mapped to a single Node object. The Node object is
     instanciated from an URI by :meth:`add`.
 
     """
