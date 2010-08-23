@@ -113,22 +113,29 @@ class NodeDirectory(object):
     A node name is mapped to a single Node object. The Node object is
     instanciated from an URI by :meth:`add`.
 
+    Take an optional :class:`AnnounceClient` to lookup for nodes.
+
     """
-    def __init__(self, config):
+    def __init__(self, config, announce = None):
         self._config = {
             'type': config['type'],
             'role': 'client'
             }
+        self._announce = announce
         self._nodes = {}
-
 
     def __contains__(self, name):
         return self._nodes.__contains__(name)
 
 
     def __getitem__(self, name):
-        return self._nodes[name]
-
+        try:
+            return self._nodes[name]
+        except KeyError:
+            if self._announce:
+                rep = self._announce.where_is(name)
+                return self.add(name, rep.uri)
+            raise ValueError("Node %s is unknown" % name)
 
     def add(self, name, uri):
         """Add a new node to the directory, and if the node is not
