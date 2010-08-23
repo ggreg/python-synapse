@@ -247,6 +247,8 @@ class Actor(object):
         """
         if msg.type == 'hello':
             self._nodes.add(msg.src, msg.uri)
+        if msg.type == 'is_at':
+            self._nodes.add(msg.src, msg.uri)
         if msg.type == 'bye':
             self._nodes.remove(msg.src, msg.uri)
 
