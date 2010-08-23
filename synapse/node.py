@@ -299,31 +299,36 @@ class AnnounceClient(object):
     When a node wants to know the URI of another node it sends a 'where_is'
     message.
 
+    If the *handler* parameter is ommitted, the :class:`AnnounceClient` is used
+    only as a resolver. It won't be notified of new nodes, it will only be able
+    to lookup for new nodes.
+
     :IVariables:
     - `subscriber`
     - `client`
     - `codec`
 
     """
-    def __init__(self, config, handler):
+    def __init__(self, config, handler = None):
         self._codec = makeCodec({
                 'type': config['codec']
-                })
-        self._subscriber = makeNode({
-                'type': config['type'],
-                'uri':  config['announce']['pubsub_uri'],
-                'role': 'subscribe',
                 })
         self._client = makeNode({
                 'type': config['type'],
                 'uri':  config['announce']['server_uri'],
                 'role': 'client'
                 })
+        self._subscriber = makeNode({
+                'type': config['type'],
+                'uri':  config['announce']['pubsub_uri'],
+                'role': 'subscribe',
+                }) if handler else None
         self._handler = handler
 
 
     def connect(self):
-        self._subscriber.connect(self.handle_announce)
+        if self._subscriber:
+            self._subscriber.connect(self.handle_announce)
         self._client.connect()
 
 
