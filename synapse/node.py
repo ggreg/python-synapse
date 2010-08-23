@@ -188,7 +188,7 @@ class Actor(object):
                 'role': 'server'
                 })
         self._announce = AnnounceClient(config, self.on_announce)
-        self._nodes = NodeDirectory(config)
+        self._nodes = NodeDirectory(config, self._announce)
         self._handler = handler
 
 
