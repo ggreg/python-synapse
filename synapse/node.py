@@ -214,9 +214,11 @@ class Actor(object):
 
 
     def sendrecv(self, node_name, msg):
-        remote = self.nodes[node_name]
+        remote = self._nodes[node_name]
+        msg = self._codec.dumps(msg)
         remote.send(msg)
-        reply = remote.recv(msg)
+        reply = remote.recv()
+        return self._codec.loads(reply)
 
 
     def on_message(self, socket, events):
