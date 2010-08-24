@@ -83,7 +83,17 @@ class AckMessage(Message):
         return {
             'src': self.src}
 
+class NackMessage(Message):
+    type = 'nack'
+    def __init__(self, src, msg):
+        self.src = src
+        self.msg = msg
 
+    @property
+    def attrs(self):
+        return {
+            'src': self.src,
+            'msg': self.msg}
 
 class MessageCodec(object):
     def loads(self, msgstring):
