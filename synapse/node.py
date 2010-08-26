@@ -1,39 +1,58 @@
 """
 Provides Node and Actor.
 
-All objects share the same global _context and _loop. Non-blocking and
-asynchronous events handler are registered in the global _loop. The event loop
-allows to handle multiple requests in a single process. However internally
-EventLoop.start() blocks on a poll().
+The value of the key *type* in the configuration is used to define the
+underlying protocol. Currently there are some global variables specific
+to zmq like _context and poller. _context holds a single :class:`zmq.Context`
+that is shared among all node sockets. The poller is a :class:`zmq.Poller`.
+However a :class:`zmq.Poller` can poll a posix socket as well as a zmq socket.
 
-You may start the loop in a dedicated thread if you need to compute in
-parallel. In this case you must handle concurrent access to data. This module
-does not protect data against concurrent access. Hence it will be hard to
-implement fine-grained locking. With no thread (but the main process one), you
-must start the loop after having setup every nodes or actor.
+The module relies on gevent for its execution. The poller runs in a dedicated
+greenlet. When it registers a node, if the node provides a loop, it spawns it
+in a new greenlet. Blocking calls like :meth:`Node.recv` must be protected by
+an event or another way to put the greenlet into sleep and wake it up once it
+will not block.
 
-Instead of Python threads, greenlets of other cooperative light-processes can
-help you to avoid concurrent accesses. In this case you need to manage the
-scheduling between light-processes and to check the polling status sometimes.
+For this purpose, we use a :class:`gevent.event.Event` to wait.
 
-With a single process, everything is sequential. Consequently an actor
-handles one request at a time. Let consider you have the light-processes. The
-first runs computations and the second runs the polling loop. Computations need
-data to run. Then it switches execution to the polling loop. The polling loop
-waits until a new incoming request arrives. This is not an issue since no
-request implies no computation. Now imagine a request arrives. It unblocks the
-polling loop. Then the pooling loop sets a flag and switch the execution to the
-computation loop. The computation runs until its end while requests accumulate
-into the socket buffer. When the computation is finished, it switches execution
-to the polling loop.
+Keep in mind greenlets are scheduled in a round-robin fashion. It means if we
+start two actors A1 and A2, each one has two nodes, its mailbox and the
+announce service. We call A1's mailbox A1.mbox and A1's announce subscriber
+A1.as and use the same convention for A2.
 
-It's simple cooperative multitasking. What happens if the computation blocks on
-I/O? CPU time is wasted. It is the issue that brought multitasking to operation
-systems. If you have several tasks to run and some tasks block, you waste CPU
-time. Then you need to switch execution between tasks when they block.
+Greenlets are scheduled in the order they were spawned: ::
+
+    | poller | A1.mbox | A1.as | A2.mbox | A2.as |
+
+Execution starts in the poller: ::
+
+    |*poller*| A1.mbox | A1.as | A2.mbox | A2.as |
+
+The poller blocks in :meth:`Poller.poll` until a incoming message is available
+in a socket. When it happens the poller sets the node's event corresponding to
+the socket and sleeps to let other greenlets run. It wakes all waiting events
+before sleeping. Let consider A2 receives a message in its mailbox: ::
+
+
+    | poller | A1.mbox | A1.as | A2.mbox | A2.as |
+                  ^        ^
+                 still waiting
+
+    | poller | A1.mbox | A1.as |*A2.mbox*| A2.as |
+                                    ^
+                       activates and calls its handler
+
+.. note:: every function that may block MUST be protected by a event or another
+   data structure that will be wake up either directly by the poller or
+   indirectly by a chain of events. The poller is always the source that wakes
+   the first event in the chain.
 
 """
 import logging
+
+from ordereddict import OrderedDict
+import gevent
+import gevent.event
 import zmq
 
 from message import makeMessage, makeCodec, \
@@ -42,53 +61,7 @@ from message import makeMessage, makeCodec, \
 
 
 
-class EventLoop(object):
-    """Loop that checks events on file descriptors.
-
-    Use :meth:`add_recv_handler` to add on handler on a file descriptor
-    incoming events e.g. when it is ready to receive data. Then call
-    :methd:`start` to start handling events. It will run a polling loop that
-    blocks until a event is triggered.
-
-    """
-    def __init__(self, run_in_thread=False):
-        from zmq.eventloop import ioloop
-        self._loop = ioloop.IOLoop.instance()
-        self._is_started = False
-        self._thread = None
-        if run_in_thread:
-            import threading
-            self._thread = threading.Thread(target=self._loop.start)
-
-
-    def add_recv_handler(self, socket, handler):
-        """add a handler that will be triggered when the file descriptor is
-        ready to receive data.
-
-        """
-        self._loop.add_handler(socket, handler, zmq.POLLIN)
-
-
-    def del_handler(self, handler):
-        self._loop.remove_handler(handler)
-
-
-    def start(self):
-        """start the polling loop to handler events. Blocks the process until a
-        event is triggered.
-
-        """
-        if not self._is_started:
-            if self._thread:
-                self._thread.start()
-            else:
-                self._loop.start()
-            self._is_started = True
-
-
-
 _context = zmq.Context()
-_loop = EventLoop()
 
 
 
@@ -116,7 +89,7 @@ class NodeDirectory(object):
     Take an optional :class:`AnnounceClient` to lookup for nodes.
 
     """
-    def __init__(self, config, announce = None):
+    def __init__(self, config, announce=None):
         self._config = {
             'type': config['type'],
             'role': 'client'
@@ -124,11 +97,17 @@ class NodeDirectory(object):
         self._announce = announce
         self._nodes = {}
 
+
     def __contains__(self, name):
         return self._nodes.__contains__(name)
 
 
     def __getitem__(self, name):
+        """
+        If *announce* was defined in the constructor and the name is not in the
+        mapping, the announcer queried to resolve the name to a node URI.
+
+        """
         try:
             return self._nodes[name]
         except KeyError:
@@ -137,9 +116,10 @@ class NodeDirectory(object):
                 return self.add(name, rep.uri)
             raise ValueError("Node %s is unknown" % name)
 
+
     def add(self, name, uri):
-        """Add a new node to the directory, and if the node is not
-        already connected, connect to it
+        """Add a new node to the directory, and if the node is not already
+        connected, connect to it.
 
         """
         self._nodes[name] = makeNode({
@@ -160,7 +140,7 @@ class NodeDirectory(object):
 
 class Actor(object):
     """
-    An actor receives messages in its mailbox.
+    An actor receives messages in its mailbox and handles them.
 
     In response to a message it receives, an actor can make local decisions,
     create more actors, send more messages, and determine how to respond to the
@@ -186,7 +166,8 @@ class Actor(object):
                 'type': config['type'],
                 'uri':  self._uri,
                 'role': 'server'
-                })
+                },
+                self.on_message)
         self._announce = AnnounceClient(config, self.on_announce)
         self._nodes = NodeDirectory(config, self._announce)
         self._handler = handler
@@ -207,9 +188,20 @@ class Actor(object):
 
 
     def connect(self):
-        self._mailbox.start(self.on_message)
+        """
+        When an actor connects to network, it initializes its nodes and
+        registers them to the poller. It ends by introducing itself to other
+        actors with a *hello* message.
+
+        """
+        self._mailbox.start()
+        poller.register(self._mailbox)
+
         self._announce.connect()
+        poller.register(self._announce._client)
+        poller.register(self._announce._subscriber)
         self._announce.hello(self._mailbox)
+
         logging.debug('%s connected' % self.name)
 
 
@@ -221,16 +213,16 @@ class Actor(object):
         return self._codec.loads(reply)
 
 
-    def on_message(self, socket, events):
+    def on_message(self, msgstring):
         """
-        :meth:`on_message` is called by the :class:`EventLoop` when the socket
-        is ready to receive data. The request is loaded by the codec, call the
-        handler, and send back the handler's return. If the handler returns None,
-        a :class:`AckMessage` is used. With a REQ/REP socket, when a request is
-        received, you **have** to send back a response.
+        Called when the socket is ready to receive data. The request is
+        decoded, passed to the handler, and sent back to caller.
+
+        If the handler returns None, an :class:`AckMessage` is used. With a
+        REQ/REP socket, when a request is received, you **have** to send back
+        a response.
 
         """
-        msgstring = socket.recv()
         request = self._codec.loads(msgstring)
         logging.debug('handling message in %s' % self.name)
         reply = self._handler(self, request)
@@ -238,7 +230,7 @@ class Actor(object):
             replystring = self._codec.dumps(reply)
         else:
             replystring = self._codec.dumps(AckMessage(self._mailbox.name))
-        socket.send(replystring)
+        return replystring
 
 
     def on_announce(self, msg):
@@ -258,7 +250,7 @@ class Actor(object):
 
 class AnnounceServer(object):
     """
-    The announce server listens to messages and publish them to all connected
+    The announce server listens to messages and publishes them to all connected
     nodes.
 
     :IVariables:
@@ -277,7 +269,8 @@ class AnnounceServer(object):
                 'type': config['type'],
                 'uri':  config['announce']['server_uri'],
                 'role': 'server'
-                })
+                },
+                self.handle_message)
         self._publisher = makeNode({
                 'name': 'announce:publisher',
                 'type': config['type'],
@@ -289,14 +282,14 @@ class AnnounceServer(object):
 
     def start(self):
         self._publisher.start()
-        self._server.start(self.handle_message)
+        self._server.start()
+        poller.register(self._server)
 
 
-    def handle_message(self, socket, events):
-        msgstring = socket.recv()
+    def handle_message(self, msgstring):
         msg = self._codec.loads(msgstring)
         if msg.type == 'hello':
-            logging.debug('DEBUG hello from %s' % msg.src)
+            logging.debug('hello from %s' % msg.src)
             self._nodes.add(msg.src, msg.uri)
             reply = AckMessage(self._server.name)
         if msg.type == 'bye':
@@ -305,7 +298,7 @@ class AnnounceServer(object):
         if msg.type == 'where_is':
             node = self._nodes[msg.name]
             reply = IsAtMessage(msg.name, node.uri)
-        socket.send(self._codec.dumps(reply))
+        return self._codec.dumps(reply)
 
 
 
@@ -328,35 +321,48 @@ class AnnounceClient(object):
     - `codec`
 
     """
-    def __init__(self, config, handler = None):
+    def __init__(self, config, handler=None):
         self._codec = makeCodec({
                 'type': config['codec']
                 })
+        self._nodes = []
         self._client = makeNode({
                 'type': config['type'],
                 'uri':  config['announce']['server_uri'],
                 'role': 'client'
                 })
+        self._nodes.append(self._client)
         self._subscriber = makeNode({
                 'type': config['type'],
                 'uri':  config['announce']['pubsub_uri'],
                 'role': 'subscribe',
-                }) if handler else None
+                },
+                self.handle_announce) if handler else None
+        if self._subscriber:
+            self._nodes.append(self._client)
         self._handler = handler
+
+
+    @property
+    def nodes(self):
+        return self._nodes
 
 
     def connect(self):
         if self._subscriber:
-            self._subscriber.connect(self.handle_announce)
+            self._subscriber.connect()
         self._client.connect()
 
 
     def send_to(self, dst, msg):
+        logging.debug('message %s sent to %s' % (msg.type, dst.name))
         return dst.send(self._codec.dumps(msg))
 
 
     def recv_from(self, src):
-        return self._codec.loads(src.recv())
+        msg = src.recv()
+        logging.debug('got %s from %s' % (msg, src.name))
+        return self._codec.loads(msg)
 
 
     def hello(self, node):
@@ -378,9 +384,86 @@ class AnnounceClient(object):
 
 
     def handle_announce(self, socket, events):
-        msgstring = socket.recv()
         request = self._codec.loads(msgstring)
         self._handler(request)
+
+
+
+class Poller(object):
+    """
+    Monitors nodes. Registers and unregisters nodes with respectively
+    :meth:`register` and :meth:`unregister`.
+
+    """
+    def loop(self):
+        raise NotImplementedError()
+
+
+    def register(self, node):
+        raise NotImplementedError()
+
+
+    def unregister(self, node):
+        raise NotImplementedError()
+
+
+    def poll(self):
+        """Warning blocks until a event happens on a monitored socket. Can
+        handle several events in a loop.
+
+        """
+        raise NotImplementedError()
+
+
+
+class ZMQPoller(Poller):
+    def __init__(self, config):
+        self._poller = zmq.Poller()
+        self._nodes_by_socket = OrderedDict()
+        self._task = gevent.spawn(self.loop)
+        self._processes = []
+
+
+    def loop(self):
+        cont = True
+        while cont:
+            logging.debug('polling...')
+            cont = self.poll()
+
+
+    def register(self, node):
+        """
+        Maps the socket to its node. If the node contains a *loop*, spawns a
+        loop in a greenlet.
+
+        """
+        self._nodes_by_socket[node._socket] = node
+        if getattr(node, 'loop', None):
+            self._processes.append(gevent.spawn(node.loop))
+        self._poller.register(node._socket, zmq.POLLIN)
+
+
+    def unregister(self, node):
+        self._poller.unregister(node._socket)
+        del self._nodes_by_socket[node._socket]
+
+
+    def poll(self):
+        """
+        Blocks until a event happens on a socket. Then gets all the events and
+        wakes all the corresponding nodes. Finally sleeps to let node greenlets
+        run.
+
+        """
+        actives = self._poller.poll()
+        logging.debug('%d active sockets' % len(actives))
+        for active_socket, poll_event in actives:
+            logging.debug('active socket: %s' % active_socket)
+            node = self._nodes_by_socket[active_socket]
+            logging.debug('wake node %s' % node.name)
+            node.event.set()
+        gevent.sleep()
+        return True
 
 
 
@@ -393,9 +476,10 @@ class ZMQNode(Node):
     type = 'zmq'
 
     def __init__(self, config):
-        self._name = config.get('name', '')
+        self._name = config.get('name', 'ANONYMOUS')
         self._uri = config['uri']
         self._socket = None
+        self._event = gevent.event.Event()
 
 
     @property
@@ -413,22 +497,33 @@ class ZMQNode(Node):
         return self._socket
 
 
+    @property
+    def event(self):
+        return self._event
+
+
     def send(self, msg):
         """Send a message
-        @param  dst: object that contains a send() socket interface
-        @param  msg: serializable string
+        :param  dst: object that contains a send() socket interface
+        :param  msg: serializable string
 
         """
-        self._socket.send(msg)
+        return self._socket.send(msg)
 
 
     def recv(self):
-        """Receive a message
-        @param  src: object that contains a recv() socket interface
-        @rtype: str
+        """
+        Return a message as a string from the receiving queue.
+
+        Blocks on the underlying ``self._socket.recv()``, that's why it waits
+        on a event that will be woke up by the poller.
 
         """
-        return self._socket.recv()
+        logging.debug('%s waiting in recv()' % self.name)
+        self._event.wait()
+        msgstring = self._socket.recv()
+        self._event.clear()
+        return msgstring
 
 
 
@@ -439,7 +534,7 @@ def mixIn(target, mixin_class):
 
 
 
-def makeNode(config):
+def makeNode(config, handler=None):
     dispatch = {'zmq': {
                 'class': ZMQNode,
                 'roles': {
@@ -452,27 +547,61 @@ def makeNode(config):
     if 'role' in config:
         cls = dispatch[config['type']]['roles'][config['role']]
 
-    return cls(config)
+    return cls(config, handler) if handler else cls(config)
+
+
+
+def makePoller(config):
+    dispatch = {'zmq': ZMQPoller}
+    return dispatch[config['type']](config)
 
 
 
 class ZMQServer(ZMQNode):
-    def start(self, handler):
+    def __init__(self, config, handler):
+        ZMQNode.__init__(self, config)
+        self._handler = handler
+
+
+    def start(self):
         self._socket = _context.socket(zmq.REP)
         self._socket.bind(self._uri)
-        self._handler = handler
-        _loop.add_recv_handler(self._socket, self._handler)
 
 
-    def __del__(self):
-        if self._socket:
-            _loop.del_handler(self._socket)
+    def loop(self):
+        while True:
+            logging.debug('%s in server loop' % self.name or 'ANONYMOUS')
+            raw_request = self.recv()
+            raw_reply = self._handler(raw_request)
+            self._socket.send(raw_reply)
+            logging.debug('%s replied' % self.name)
+
+
+    def recv(self):
+        """Receive a message
+        @param  src: object that contains a recv() socket interface
+        @rtype: str
+
+        """
+        logging.debug('[%s] waiting on event %s' % (self.name, self._event))
+        self._event.wait()
+        msgstring = self._socket.recv()
+        logging.debug('[%s] socket: %s' % (self.name, self._socket))
+        logging.debug('[%s] recv -> %s' % (self.name, msgstring))
+        self._event.clear()
+        return msgstring
+
+
+    def send(self, msg):
+        raise NotImplementedError()
+
 
 
 class ZMQClient(ZMQNode):
     def connect(self):
         self._socket = _context.socket(zmq.REQ)
         self._socket.connect(self._uri)
+        poller.register(self)
 
 
     def __repr__(self):
@@ -504,19 +633,40 @@ class ZMQSubscribe(ZMQNode):
     be called when a message arrives. Support only :meth:`recv`.
 
     """
-    def connect(self, handler):
+    def __init__(self, config, handler):
+        ZMQNode.__init__(self, config)
+        self._handler = handler
+
+
+    def connect(self):
         self._socket = _context.socket(zmq.SUB)
         self._socket.bind(self._uri)
         self._socket.connect(self._uri)
         self._socket.setsockopt(zmq.SUBSCRIBE, '')
-        self._handler = handler
-        _loop.add_recv_handler(self._socket, self._handler)
+
+
+    def loop(self):
+        while True:
+            logging.debug('%s in subscriber loop' % self.name or 'ANONYMOUS')
+            raw_request = self.recv()
+            self._handler(raw_request)
+
+
+    def recv(self):
+        """Receive a message
+        @param  src: object that contains a recv() socket interface
+        @rtype: str
+
+        """
+        self._event.wait()
+        msgstring = self._socket.recv()
+        logging.debug('[%s] recv -> %s' % (self.name, msgstring))
+        self._event.clear()
+        return msgstring
 
 
     def send(self, msg):
         raise NotImplementedError()
 
 
-    def __del__(self):
-        if self._socket:
-            _loop.del_handler(self._socket)
+poller = ZMQPoller({})

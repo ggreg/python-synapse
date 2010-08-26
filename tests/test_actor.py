@@ -28,22 +28,23 @@ def echo_reply_handler(self, msg):
 
 
 
-def forwarder_handler(self, msg):
-    dstname = actor_config2['name']
-    try:
-        dst = self._nodes[dstname]
-    except KeyError:
-        uri = self._announce.where_is(dstname).uri
-        logging.debug('forwarder_handler: %s is at %s' % (dstname, uri))
-        self._nodes.add(dstname, uri)
-        dst = self._nodes[dstname]
-    finally:
-        msg.src = self.name
-        dst.connect()
-        dst.send(self._codec.dumps(msg))
+class ForwarderHandler(object):
+    def __init__(self):
+        self._dst = None
+
+
+    def __call__(self, actor, msg):
+        dstname = actor_config2['name']
+        if not self._dst:
+            self._dst = actor._nodes[dstname]
+
+        msg.src = actor.name
+        self._dst.send(actor._codec.dumps(msg))
         logging.debug('forwarder_handler: message forwarded')
-        reply = dst.recv()
-        return self._codec.loads(reply)
+
+        reply = self._dst.recv()
+
+        return actor._codec.loads(reply)
 
 
 
@@ -61,27 +62,15 @@ def seed():
 
 
 def test_actor():
-    import threading
-
     common_config = yaml.load(file('config.yaml'))
     actor_config1.update(common_config)
     actor_config2.update(common_config)
 
     announcer_process = subprocess.Popen(['./start_announcer.py'])
 
-    a1 = node.Actor(actor_config1, forwarder_handler)
+    a1 = node.Actor(actor_config1, ForwarderHandler())
     a1.connect()
-    loop1 = node._loop
-    t1 = threading.Thread(target=loop1.start)
 
-    node._loop = node.EventLoop()
     a2 = node.Actor(actor_config2, echo_reply_handler)
     a2.connect()
-    loop2 = node._loop
-    t2 = threading.Thread(target=loop2.start)
-
-    if loop1 is loop2:
-        print 'error same loop'
-        return 1
-    t1.start()
-    t2.start()
+    node.poller._task.join()
