@@ -4,13 +4,25 @@ import simplejson as json
 
 
 class Message(object):
-    pass
+    def __init__(self, id=None):
+        self._id = id
+
+
+    @property
+    def id(self):
+        if not self._id:
+            rand_min = 0
+            rand_max = 2**32
+
+            self._id = random.randint(rand_min, rand_max)
+        return self._id
 
 
 
 class HelloMessage(Message):
     type = 'hello'
-    def __init__(self, src, uri):
+    def __init__(self, src, uri, id=None):
+        Message.__init__(self, id)
         self.src = src
         self.uri = uri
 
@@ -33,7 +45,8 @@ class HelloMessage(Message):
 
 class ByeMessage(Message):
     type = 'bye'
-    def __init__(self, src):
+    def __init__(self, src, id=None):
+        Message.__init__(self, id)
         self.src = src
 
 
@@ -46,7 +59,8 @@ class ByeMessage(Message):
 
 class WhereIsMessage(Message):
     type = 'where_is'
-    def __init__(self, name):
+    def __init__(self, name, id=None):
+        Message.__init__(self, id)
         self.name = name
 
 
@@ -59,7 +73,8 @@ class WhereIsMessage(Message):
 
 class IsAtMessage(Message):
     type = 'is_at'
-    def __init__(self, name, uri):
+    def __init__(self, name, uri, id=None):
+        Message.__init__(self, id)
         self.name = name
         self.uri = uri
 
@@ -74,7 +89,8 @@ class IsAtMessage(Message):
 
 class AckMessage(Message):
     type = 'ack'
-    def __init__(self, src):
+    def __init__(self, src, id=None):
+        Message.__init__(self, id)
         self.src = src
 
 
@@ -83,9 +99,12 @@ class AckMessage(Message):
         return {
             'src': self.src}
 
+
+
 class NackMessage(Message):
     type = 'nack'
-    def __init__(self, src, msg):
+    def __init__(self, src, msg, id=None):
+        Message.__init__(self, id)
         self.src = src
         self.msg = msg
 
@@ -94,6 +113,8 @@ class NackMessage(Message):
         return {
             'src': self.src,
             'msg': self.msg}
+
+
 
 class MessageCodec(object):
     def loads(self, msgstring):
@@ -110,22 +131,13 @@ class MessageCodecJSONRPC(MessageCodec):
         pass
 
 
-    @property
-    def ids(self):
-        rand_min = 0
-        rand_max = 2**16
-
-        while True:
-            n = random.randint(rand_min, rand_max)
-            yield n
-
-
     def loads(self, msgstring):
         jsonrpc_msg = json.loads(msgstring)
         msgtype = jsonrpc_msg['method']
         msgattrs = jsonrpc_msg['params']
         msg_dict = {'type': msgtype}
         msg_dict.update(msgattrs)
+        msg_dict['id'] = jsonrpc_msg['id']
         msg = makeMessage(msg_dict)
         return msg
 
@@ -134,7 +146,7 @@ class MessageCodecJSONRPC(MessageCodec):
         jsonrpc_msg = {
             'method': msg.type,
             'params': msg.attrs,
-            'id': self.ids.next()}
+            'id': msg.id}
 
         return json.dumps(jsonrpc_msg)
 
