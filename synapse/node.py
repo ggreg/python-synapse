@@ -49,6 +49,8 @@ before sleeping. Let consider A2 receives a message in its mailbox: ::
 
 """
 import logging
+import math
+import time
 
 from ordereddict import OrderedDict
 import gevent
@@ -419,11 +421,28 @@ class Poller(object):
 
 
 class ZMQPoller(Poller):
-    def __init__(self, config):
+    def __init__(self, config, periodic_handler=None):
         self._poller = zmq.Poller()
         self._nodes_by_socket = OrderedDict()
         self._task = gevent.spawn(self.loop)
         self._processes = []
+        self._timeout = config.get('timeout')
+        self._last_time = None
+
+        self._periodic_handler = periodic_handler
+
+
+    def get_timeout(self):
+        return self._timeout
+    def set_timeout(self, timeout):
+        self._timeout = timeout
+    timeout = property(get_timeout, set_timeout)
+
+    def get_periodic_handler(self):
+        return self._periodic_handler
+    def set_periodic_handler(self, handler):
+        self._periodic_handler = handler
+    periodic_handler = property(get_periodic_handler, set_periodic_handler)
 
 
     def wait(self):
@@ -458,17 +477,42 @@ class ZMQPoller(Poller):
         """
         Blocks until a event happens on a socket. Then gets all the events and
         wakes all the corresponding nodes. Finally sleeps to let node greenlets
-        run.
+        run. If the poller has a *timeout* set, interrupt the polling after
+        *timeout* seconds. When not specified, time values are represented in
+        secondes.
 
         """
-        actives = self._poller.poll()
-        logging.debug('%d active sockets' % len(actives))
+        polling_timeout_ms = None
+        if self._last_time and self._timeout:
+            timeout = self._timeout
+            last = self._last_time
+            elapsed = time.time() - last
+            if elapsed >= timeout and self._periodic_handler:
+                self._periodic_handler()
+            elapsed = time.time() - last
+            missed = elapsed / timeout
+            if int(missed) > 1:
+                logging.info('[poller] missed %d polling timeouts of %d' % \
+                             (int(missed)-1, timeout))
+            self._last_time = last + math.floor(missed) * timeout
+            polling_timeout_ms = (timeout-missed) * 1000
+            logging.debug('[poller] reset with %f (last timestamp: %f)' % \
+                          (polling_timeout_ms, self._last_time))
+        elif self._timeout:
+            self._last_time = time.time()
+            polling_timeout_ms = self._timeout*1000
+            logging.debug('[poller] last timestamp: %f' % self._last_time)
+
+        actives = self._poller.poll(polling_timeout_ms)
+        logging.debug('[poller] %d active sockets' % len(actives))
         for active_socket, poll_event in actives:
-            logging.debug('active socket: %s' % active_socket)
+            logging.debug('[poller] active socket: %s' % active_socket)
             node = self._nodes_by_socket[active_socket]
-            logging.debug('wake node %s' % node.name)
+            logging.debug('[poller] wake node %s' % node.name)
             node.event.set()
-        gevent.sleep()
+        if actives:
+            gevent.sleep()
+
         return True
 
 
