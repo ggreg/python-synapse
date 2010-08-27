@@ -73,4 +73,4 @@ def test_actor():
 
     a2 = node.Actor(actor_config2, echo_reply_handler)
     a2.connect()
-    node.poller._task.join()
+    node.poller.wait()
