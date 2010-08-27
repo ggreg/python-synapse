@@ -467,6 +467,10 @@ class ZMQPoller(Poller):
 
 
     def wait(self):
+        import gc
+        collected = gc.collect()
+        logging.debug('[poller] GC collected: %d; garbage: %s' % \
+                      (collected, gc.garbage))
         return self._task.join()
 
 
