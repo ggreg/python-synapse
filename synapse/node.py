@@ -148,6 +148,9 @@ class Actor(object):
     create more actors, send more messages, and determine how to respond to the
     next message received.
 
+    You can create an :class:`Actor` by simply pass a callable in the constructor,
+    or you can inherit from :class:`Actor` and implement a *handle_message* method.
+
     :IVariables:
     - `name`: the name that identifies the current node
     - `uri`: defines the protocol address of the current node
@@ -155,10 +158,10 @@ class Actor(object):
     - `nodes`: list of other nodes
     - `announce`: subscribed queue of announces where new nodes introduce
       themselves
-    - `handler`: callable called when a message is received
+    - `handler`: Optional. callable called when a message is received
 
     """
-    def __init__(self, config, handler):
+    def __init__(self, config, handler=None):
         self._uri = config['uri']
         self._codec = makeCodec({
                 'type': config['codec']
@@ -172,7 +175,9 @@ class Actor(object):
                 self.on_message)
         self._announce = AnnounceClient(config, self.on_announce)
         self._nodes = NodeDirectory(config, self._announce)
-        self._handler = handler
+        self._handler = handler if handler else getattr(self, 'handle_message', None)
+        if self._handler is None:
+            raise TypeError("no message handler provided")
 
 
     def __del__(self):
