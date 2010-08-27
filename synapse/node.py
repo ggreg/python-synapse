@@ -327,12 +327,14 @@ class AnnounceClient(object):
                 })
         self._nodes = []
         self._client = makeNode({
+                'name': 'announce:client',
                 'type': config['type'],
                 'uri':  config['announce']['server_uri'],
                 'role': 'client'
                 })
         self._nodes.append(self._client)
         self._subscriber = makeNode({
+                'name': 'announce:subscribe',
                 'type': config['type'],
                 'uri':  config['announce']['pubsub_uri'],
                 'role': 'subscribe',
