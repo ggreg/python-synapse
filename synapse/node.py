@@ -434,7 +434,12 @@ class ZMQPoller(Poller):
         self._timeout = config.get('timeout')
         self._last_time = None
 
-        self._periodic_handler = periodic_handler
+        self._periodic_task = None
+        self._periodic_event = None
+        if periodic_handler:
+            self.periodic_handler = periodic_handler
+        else:
+            self._periodic_handler = None
 
 
     def get_timeout(self):
@@ -443,12 +448,15 @@ class ZMQPoller(Poller):
         self._timeout = timeout
     timeout = property(get_timeout, set_timeout)
 
+
     def get_periodic_handler(self):
         return self._periodic_handler
     def set_periodic_handler(self, handler):
         if self._periodic_handler:
             raise PollerException('periodic handler already defined')
         self._periodic_handler = handler
+        self._periodic_task = gevent.spawn(self.periodic_loop)
+        self._periodic_event = gevent.event.Event()
     periodic_handler = property(get_periodic_handler, set_periodic_handler)
 
 
@@ -467,6 +475,13 @@ class ZMQPoller(Poller):
         while cont:
             logging.debug('polling...')
             cont = self.poll()
+
+
+    def periodic_loop(self):
+        while True:
+            self._periodic_event.wait()
+            self._periodic_handler()
+            self._periodic_event.clear()
 
 
     def register(self, node):
@@ -500,8 +515,10 @@ class ZMQPoller(Poller):
             timeout = self._timeout
             last = self._last_time
             elapsed = time.time() - last
-            if elapsed >= timeout and self._periodic_handler:
-                self._periodic_handler()
+            if elapsed >= timeout and self._periodic_handler and \
+                    not self._periodic_event.is_set():
+                self._periodic_event.set()
+                gevent.sleep()
             elapsed = time.time() - last
             missed = elapsed / timeout
             if int(missed) > 1:
