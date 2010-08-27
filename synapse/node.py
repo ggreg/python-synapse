@@ -420,6 +420,11 @@ class Poller(object):
 
 
 
+class PollerException(Exception):
+    pass
+
+
+
 class ZMQPoller(Poller):
     def __init__(self, config, periodic_handler=None):
         self._poller = zmq.Poller()
@@ -441,8 +446,16 @@ class ZMQPoller(Poller):
     def get_periodic_handler(self):
         return self._periodic_handler
     def set_periodic_handler(self, handler):
+        if self._periodic_handler:
+            raise PollerException('periodic handler already defined')
         self._periodic_handler = handler
     periodic_handler = property(get_periodic_handler, set_periodic_handler)
+
+
+    def unset_periodic_handler(self, handler):
+        self._periodic_handler = None
+        gevent.kill(self._periodic_task)
+        self._periodic_event = None
 
 
     def wait(self):
