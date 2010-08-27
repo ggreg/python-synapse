@@ -493,16 +493,16 @@ class ZMQPoller(Poller):
             self._periodic_event.clear()
 
 
-    def register(self, node):
+    def register(self, waiting_event):
         """
         Maps the socket to its node. If the node contains a *loop*, spawns a
         loop in a greenlet.
 
         """
-        self._nodes_by_socket[node._socket] = node
-        if getattr(node, 'loop', None):
-            self._processes.append(gevent.spawn(node.loop))
-        self._poller.register(node._socket, zmq.POLLIN)
+        self._nodes_by_socket[waiting_event._socket] = waiting_event
+        if getattr(waiting_event, 'loop', None):
+            self._processes.append(gevent.spawn(waiting_event.loop))
+        self._poller.register(waiting_event.socket, zmq.POLLIN)
 
 
     def unregister(self, node):
@@ -546,9 +546,9 @@ class ZMQPoller(Poller):
         logging.debug('[poller] %d active sockets' % len(actives))
         for active_socket, poll_event in actives:
             logging.debug('[poller] active socket: %s' % active_socket)
-            node = self._nodes_by_socket[active_socket]
-            logging.debug('[poller] wake node %s' % node.name)
-            node.event.set()
+            waiting_event = self._nodes_by_socket[active_socket]
+            logging.debug('[poller] wake %s' % waiting_event.name)
+            waiting_event.wake()
         if actives:
             gevent.sleep()
 
@@ -589,6 +589,10 @@ class ZMQNode(Node):
     @property
     def event(self):
         return self._event
+
+
+    def wake(self):
+        self._event.set()
 
 
     def send(self, msg):
