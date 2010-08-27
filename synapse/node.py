@@ -426,6 +426,10 @@ class ZMQPoller(Poller):
         self._processes = []
 
 
+    def wait(self):
+        return self._task.join()
+
+
     def loop(self):
         cont = True
         while cont:
