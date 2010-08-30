@@ -59,7 +59,8 @@ import zmq
 
 from message import makeMessage, makeCodec, \
                     HelloMessage, ByeMessage, \
-                    WhereIsMessage, IsAtMessage, AckMessage
+                    WhereIsMessage, IsAtMessage, AckMessage, \
+                    DispatchMessage
 
 
 
@@ -151,6 +152,12 @@ class Actor(object):
     You can create an :class:`Actor` by simply pass a callable in the constructor,
     or you can inherit from :class:`Actor` and implement a *handle_message* method.
 
+    An :class:`Actor` can dispatch messages on different methods.
+    If an :class:`Actor use :meth:`sendrecv` and give "<node name>:<method>" as the
+    node name, the message is encapsulated in a :class:`DispatchMessage`, and the
+    :meth:`on_message` dispatch to the method. If the given method is unknown, it
+    just calls the `handler`.
+
     :IVariables:
     - `name`: the name that identifies the current node
     - `uri`: defines the protocol address of the current node
@@ -213,8 +220,21 @@ class Actor(object):
 
 
     def sendrecv(self, node_name, msg):
-        remote = self._nodes[node_name]
+        """Provides a simple interface to perform a send and directly a receive
+        node_name can contains the dispatch method, in this case, the message
+        is encapsulated into a :class:`DispatchMessage`, and the :meth:`on_message`
+        will do the dispatching.
+
+        """
         msg = self._codec.dumps(msg)
+        if ':' in node_name:
+            try:
+                node_name, meth_name = node_name.split(':')
+                new_msg = DispatchMessage(meth_name, msg)
+                msg = self._codec.dumps(new_msg)
+            except ValueError:
+                raise ValueError("Invalid node %s" % node_name)
+        remote = self._nodes[node_name]
         remote.send(msg)
         reply = remote.recv()
         return self._codec.loads(reply)
@@ -229,10 +249,19 @@ class Actor(object):
         REQ/REP socket, when a request is received, you **have** to send back
         a response.
 
+        If the request is a subclass of DispatchMessage, two options:
+        - the *method* attribute from the request is an attribute of self, call it
+        - otherwise, just call :meth:`_handler`
+
         """
+        handler = self._handler
         request = self._codec.loads(msgstring)
         logging.debug('handling message in %s' % self.name)
-        reply = self._handler(self, request)
+        if issubclass(request.__class__, DispatchMessage):
+            method = request.method
+            request = self._codec.loads(request.msg)
+            handler = getattr(self, method, handler)
+        reply = handler(self, request)
         if reply:
             replystring = self._codec.dumps(reply)
         else:
