@@ -138,7 +138,34 @@ class MessageCodec(object):
     def dumps(self, msg):
         raise NotImplementedError()
 
+class DateTimeJSONEncoder(json.JSONEncoder):
+    """
+    JSONEncoder subclass that knows how to encode date/time types
+    Taken from django (http://code.djangoproject.com/browser/django/trunk/django/core/serializers/json.py)
+    Modified to handle xmlrpclib.DateTime objects
 
+    """
+
+    DATE_FORMAT = "%Y-%m-%d"
+    TIME_FORMAT = "%H:%M:%S"
+
+    def default(self, o):
+        import datetime
+        try:
+            import xmlrpclib
+            if isinstance(o, xmlrpclib.DateTime):
+                converted = datetime.datetime.strptime(o.value, "%s %s.%%f" % (self.DATE_FORMAT, self.TIME_FORMAT))
+                return converted.strftime("%s %s" % (self.DATE_FORMAT, self.TIME_FORMAT))
+        except Exception, e:
+            pass
+        if isinstance(o, datetime.datetime):
+            return o.strftime("%s %s" % (self.DATE_FORMAT, self.TIME_FORMAT))
+        elif isinstance(o, datetime.date):
+            return o.strftime(self.DATE_FORMAT)
+        elif isinstance(o, datetime.time):
+            return o.strftime(self.TIME_FORMAT)
+        else:
+            return super(self.__class__, self).default(o)
 
 class MessageCodecJSONRPC(MessageCodec):
     def __init__(self, config):
@@ -162,7 +189,7 @@ class MessageCodecJSONRPC(MessageCodec):
             'params': msg.attrs,
             'id': msg.id}
 
-        return json.dumps(jsonrpc_msg)
+        return json.dumps(jsonrpc_msg, cls=DateTimeJSONEncoder)
 
 
 
