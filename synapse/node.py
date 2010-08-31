@@ -51,6 +51,7 @@ before sleeping. Let consider A2 receives a message in its mailbox: ::
 import logging
 import math
 import time
+import os
 
 from ordereddict import OrderedDict
 import gevent
@@ -160,6 +161,7 @@ class NodeDirectory(object):
 
         """
         self._nodes[name] = makeNode({
+                'name': 'client:%s' % name,
                 'type': self._config['type'],
                 'role': self._config['role'],
                 'uri':  uri
@@ -254,7 +256,7 @@ class Actor(object):
         poller.register(self._announce._subscriber)
         self._announce.hello(self._mailbox)
 
-        logging.debug('%s connected' % self.name)
+        logging.debug('[%s] connected' % self.name)
 
 
     def will_handle(self, msgid, incoming_msg, func):
@@ -281,14 +283,18 @@ class Actor(object):
         msgstring = self._codec.dumps(msg)
 
         remote.send(msgstring)
+
         if on_recv:
+            logging.debug('[%s] async sendrecv' % self.name)
             incoming_msg = gevent.queue.Queue()
             self._pendings[msg.id] = incoming_msg
-            gevent.spawn(self.will_handle(msg.id, incoming_msg, on_recv))
-            return
-        else:
-            reply = remote.recv()
-            return self._codec.loads(reply)
+            gevent.spawn(self.will_handle, msg.id, incoming_msg, on_recv)
+
+        logging.debug('[%s] handshake reply from %s in sendrecv()' % \
+                      (self.name, node_name))
+
+        reply = remote.recv()
+        return self._codec.loads(reply)
 
 
     def wake_message_worker(self, msg):
@@ -310,8 +316,7 @@ class Actor(object):
 
         """
         msg = self._codec.loads(msgstring)
-
-        logging.debug('handling message in %s' % self.name)
+        logging.debug('[%s] handling message #%d' % (self.name, msg.id))
 
         handler = self._handler
         if issubclass(request.__class__, DispatchMessage):
@@ -322,11 +327,14 @@ class Actor(object):
         if msg.id in self._pendings:
             logging.debug('[%s] resume pending worker for message #%d' % \
                     (self.name, msg.id))
+            replystring = self._codec.dumps(AckMessage(self._mailbox.name))
+            self._mailbox._socket.send(replystring)
             self.wake_message_worker(msg)
             return
 
         if hasattr(handler, 'async'):
-            logging.debug('[%s] handling async call' % self.name)
+            logging.debug('[%s] handling async call for message #%d' % \
+                          (self.name, msg.id))
             replystring = self._codec.dumps(AckMessage(self._mailbox.name))
             self._mailbox._socket.send(replystring)
             gevent.spawn(handler, self, msg)
@@ -371,6 +379,7 @@ class AnnounceServer(object):
 
     """
     def __init__(self, config):
+        self.name = 'announce:server'
         self._codec = makeCodec({
                 'type': config['codec']
                 })
@@ -399,7 +408,7 @@ class AnnounceServer(object):
     def handle_message(self, msgstring):
         msg = self._codec.loads(msgstring)
         if msg.type == 'hello':
-            logging.debug('hello from %s' % msg.src)
+            logging.debug('[%s] hello from %s' % (self.name, msg.src))
             self._nodes.add(msg.src, msg.uri)
             reply = AckMessage(self._server.name)
         if msg.type == 'bye':
@@ -432,6 +441,7 @@ class AnnounceClient(object):
 
     """
     def __init__(self, config, handler=None):
+        self.name = 'announce:client'
         self._codec = makeCodec({
                 'type': config['codec']
                 })
@@ -467,13 +477,15 @@ class AnnounceClient(object):
 
 
     def send_to(self, dst, msg):
-        logging.debug('message %s sent to %s' % (msg.type, dst.name))
+        logging.debug('[%s] message %s#%d sent to %s' % \
+                      (self.name, msg.type, msg.id, dst.name))
         return dst.send(self._codec.dumps(msg))
 
 
     def recv_from(self, src):
         msg = src.recv()
-        logging.debug('got %s from %s' % (msg, src.name))
+        logging.debug('[%s] got message from %s' % \
+                      (self.name, src.name))
         return self._codec.loads(msg)
 
 
@@ -535,6 +547,7 @@ class PollerException(Exception):
 
 class ZMQPoller(Poller):
     def __init__(self, config, periodic_handler=None):
+        self._name = 'poller@%d' % os.getpid()
         self._poller = zmq.Poller()
         self._nodes_by_socket = OrderedDict()
         self._task = gevent.spawn(self.loop)
@@ -577,15 +590,15 @@ class ZMQPoller(Poller):
     def wait(self):
         import gc
         collected = gc.collect()
-        logging.debug('[poller] GC collected: %d; garbage: %s' % \
-                      (collected, gc.garbage))
+        logging.debug('[%s] GC collected: %d; garbage: %s' % \
+                      (self._name, collected, gc.garbage))
         return self._task.join()
 
 
     def loop(self):
         cont = True
         while cont:
-            logging.debug('polling...')
+            logging.debug('[%s] polling...' % self._name)
             cont = self.poll()
 
 
@@ -634,23 +647,24 @@ class ZMQPoller(Poller):
             elapsed = time.time() - last
             missed = elapsed / timeout
             if int(missed) > 1:
-                logging.info('[poller] missed %d polling timeouts of %d' % \
-                             (int(missed)-1, timeout))
+                logging.info('[%s] missed %d polling timeouts of %d' % \
+                             (self._name, int(missed)-1, timeout))
             self._last_time = last + math.floor(missed) * timeout
             polling_timeout_ms = (timeout-missed) * 1000
-            logging.debug('[poller] reset with %f (last timestamp: %f)' % \
-                          (polling_timeout_ms, self._last_time))
+            logging.debug('[%s] reset with %f (last timestamp: %f)' % \
+                          (self._name, polling_timeout_ms, self._last_time))
         elif self._timeout:
             self._last_time = time.time()
             polling_timeout_ms = self._timeout*1000
-            logging.debug('[poller] last timestamp: %f' % self._last_time)
+            logging.debug('[%s] last timestamp: %f' % \
+                          (self._name, self._last_time))
 
         actives = self._poller.poll(polling_timeout_ms)
-        logging.debug('[poller] %d active sockets' % len(actives))
+        logging.debug('[%s] %d active sockets' % (self._name, len(actives)))
         for active_socket, poll_event in actives:
-            logging.debug('[poller] active socket: %s' % active_socket)
+            logging.debug('[%s] active socket: %s' % (self._name, active_socket))
             waiting_event = self._nodes_by_socket[active_socket]
-            logging.debug('[poller] wake %s' % waiting_event.name)
+            logging.debug('[%s] wake %s' % (self._name, waiting_event.name))
             waiting_event.wake()
         if actives:
             gevent.sleep()
@@ -719,9 +733,8 @@ class ZMQNode(Node):
         on a event that will be woke up by the poller.
 
         """
-        logging.debug('%s waiting in recv()' % self.name)
+        logging.debug('[%s] waiting in recv()' % self.name)
         self.wait()
-        self._event.wait()
         msgstring = self._socket.recv()
         logging.debug('[%s] socket: %s' % (self.name, self._socket))
         logging.debug('[%s] recv -> %s' % (self.name, msgstring))
@@ -773,7 +786,7 @@ class ZMQServer(ZMQNode):
 
     def loop(self):
         while True:
-            logging.debug('%s in server loop' % self.name or 'ANONYMOUS')
+            logging.debug('[%s] in server loop' % self.name or 'ANONYMOUS')
             raw_request = self.recv()
             raw_reply = self._handler(raw_request)
             if raw_reply:
@@ -835,7 +848,7 @@ class ZMQSubscribe(ZMQNode):
 
     def loop(self):
         while True:
-            logging.debug('%s in subscriber loop' % self.name or 'ANONYMOUS')
+            logging.debug('[%s] in subscriber loop' % self.name or 'ANONYMOUS')
             raw_request = self.recv()
             self._handler(raw_request)
 
