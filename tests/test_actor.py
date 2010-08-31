@@ -1,10 +1,12 @@
 #!/usr/bin/env python
 
 import sys
+sys.path = ['..'] + sys.path
 import subprocess
 import logging
 import yaml
-sys.path = ['..'] + sys.path
+import time
+
 from synapse import node, message
 
 
@@ -22,10 +24,23 @@ actor_config2 = {
 
 
 
-def echo_reply_handler(self, msg):
+def echo_reply_handler(actor, msg):
     logging.debug('echo reply: %s' % msg)
     return msg
 
+
+
+@node.async
+def echo_reply_handler_delay(actor, delay, msg):
+    time.sleep(delay)
+    reply = echo_reply_handler(actor, msg)
+
+    async_msg = actor._codec.dumps(message.makeMessage(
+            {'type': 'reply', 'src': actor.name, 'data': 'TEST', 'id': msg.id}))
+    actor._nodes['test1'].send(async_msg)
+    logging.debug('[test2] async_msg #%d sent to test1' % msg.id)
+    ack = actor._nodes['test1'].recv()
+    return
 
 
 class ForwarderHandler(object):
@@ -34,6 +49,7 @@ class ForwarderHandler(object):
 
 
     def __call__(self, actor, msg):
+        logging.debug('in forwarder handler')
         dstname = actor_config2['name']
         if not self._dst:
             self._dst = actor._nodes[dstname]
@@ -46,6 +62,18 @@ class ForwarderHandler(object):
 
         return actor._codec.loads(reply)
 
+
+@node.async
+def forwarder_handler2(actor, msg):
+        logging.debug('in async forwarder handler')
+        dstname = actor_config2['name']
+        actor.sendrecv(dstname, msg, on_recv=display_message)
+        return
+
+
+def display_message(msg):
+    msg.src += ' (forwarded)'
+    print 'MESSAGE: %s' % msg.attrs
 
 
 def seed():
@@ -73,4 +101,21 @@ def test_actor():
 
     a2 = node.Actor(actor_config2, echo_reply_handler)
     a2.connect()
+    node.poller.wait()
+
+
+def test_sendrecv():
+    common_config = yaml.load(file('config.yaml'))
+    actor_config1.update(common_config)
+    actor_config2.update(common_config)
+
+    announcer_process = subprocess.Popen(['./start_announcer.py'])
+
+    a1 = node.Actor(actor_config1, forwarder_handler2)
+    a1.connect()
+
+    a2 = node.Actor(actor_config2,
+            lambda a, m: echo_reply_handler_delay(a, 1, m))
+    a2.connect()
+
     node.poller.wait()
