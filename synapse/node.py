@@ -620,6 +620,10 @@ class ZMQNode(Node):
         return self._event
 
 
+    def wait(self):
+        self._event.wait()
+
+
     def wake(self):
         self._event.set()
 
