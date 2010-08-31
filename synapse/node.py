@@ -84,6 +84,12 @@ class Node(object):
 
 
 
+def async(func):
+    func.async = True
+    return func
+
+
+
 class NodeDirectory(object):
     """Stores a node name -> Node object mapping
 
