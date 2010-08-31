@@ -646,8 +646,11 @@ class ZMQNode(Node):
 
         """
         logging.debug('%s waiting in recv()' % self.name)
+        self.wait()
         self._event.wait()
         msgstring = self._socket.recv()
+        logging.debug('[%s] socket: %s' % (self.name, self._socket))
+        logging.debug('[%s] recv -> %s' % (self.name, msgstring))
         self._event.clear()
         return msgstring
 
@@ -699,23 +702,8 @@ class ZMQServer(ZMQNode):
             logging.debug('%s in server loop' % self.name or 'ANONYMOUS')
             raw_request = self.recv()
             raw_reply = self._handler(raw_request)
-            self._socket.send(raw_reply)
-            logging.debug('%s replied' % self.name)
-
-
-    def recv(self):
-        """Receive a message
-        @param  src: object that contains a recv() socket interface
-        @rtype: str
-
-        """
-        logging.debug('[%s] waiting on event %s' % (self.name, self._event))
-        self._event.wait()
-        msgstring = self._socket.recv()
-        logging.debug('[%s] socket: %s' % (self.name, self._socket))
-        logging.debug('[%s] recv -> %s' % (self.name, msgstring))
-        self._event.clear()
-        return msgstring
+            if raw_reply:
+                self._socket.send(raw_reply)
 
 
     def send(self, msg):
@@ -778,21 +766,9 @@ class ZMQSubscribe(ZMQNode):
             self._handler(raw_request)
 
 
-    def recv(self):
-        """Receive a message
-        @param  src: object that contains a recv() socket interface
-        @rtype: str
-
-        """
-        self._event.wait()
-        msgstring = self._socket.recv()
-        logging.debug('[%s] recv -> %s' % (self.name, msgstring))
-        self._event.clear()
-        return msgstring
-
-
     def send(self, msg):
         raise NotImplementedError()
+
 
 
 poller = ZMQPoller({})
