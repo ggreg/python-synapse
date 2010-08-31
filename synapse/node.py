@@ -68,6 +68,33 @@ from message import makeMessage, makeCodec, \
 _context = zmq.Context()
 
 
+import types
+
+
+
+def log_on_exit(greenlet):
+    logging.debug('greenlet %s exited' % greenlet)
+
+
+
+def spawn(*args, **kwargs):
+    handler = args[0]
+    assert handler is not None
+    greenlet = gevent_spawn(*args, **kwargs)
+    greenlet.link(log_on_exit)
+    if isinstance(handler, types.FunctionType) or \
+            isinstance(handler, types.MethodType):
+        name = handler.__name__
+    else:
+        name = handler.__class__
+    logging.debug('spawn function %s in greenlet %s' % (name, str(greenlet)))
+    assert greenlet is not None
+    return greenlet
+
+gevent_spawn = gevent.spawn
+gevent.spawn = spawn
+
+
 
 class Node(object):
     """Node abstract interface.
