@@ -19,6 +19,22 @@ class Message(object):
 
 
 
+class ReplyMessage(Message):
+    type = 'reply'
+    def __init__(self, src, data, id):
+        Message.__init__(self, id)
+        self.src = src
+        self.data = data
+
+
+    @property
+    def attrs(self):
+        return {
+            'src': self.src,
+            'data': self.data}
+
+
+
 class HelloMessage(Message):
     type = 'hello'
     def __init__(self, src, uri, id=None):
@@ -32,14 +48,6 @@ class HelloMessage(Message):
         return {
             'src': self.src,
             'uri': self.uri}
-
-
-    def loads(self, msg):
-        pass
-
-
-    def dumps(self, msg):
-        pass
 
 
 
