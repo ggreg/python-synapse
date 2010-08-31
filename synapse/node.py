@@ -55,6 +55,7 @@ import time
 from ordereddict import OrderedDict
 import gevent
 import gevent.event
+import gevent.queue
 import zmq
 
 from message import makeMessage, makeCodec, \
@@ -183,8 +184,12 @@ class Actor(object):
         self._announce = AnnounceClient(config, self.on_announce)
         self._nodes = NodeDirectory(config, self._announce)
         self._handler = handler if handler else getattr(self, 'handle_message', None)
+        if hasattr(handler, 'async'):
+            self._handler.async = True
         if self._handler is None:
             raise TypeError("no message handler provided")
+        self._tasks = []
+        self._pendings = {}
 
 
     def __del__(self):
@@ -219,25 +224,42 @@ class Actor(object):
         logging.debug('%s connected' % self.name)
 
 
-    def sendrecv(self, node_name, msg):
+    def will_handle(self, msgid, incoming_msg, func):
+        msgstring = incoming_msg.get()
+        replystring = func(msgstring)
+        del self._pendings[msgid]
+
+
+    def sendrecv(self, node_name, msg, on_recv=None):
         """Provides a simple interface to perform a send and directly a receive
         node_name can contains the dispatch method, in this case, the message
         is encapsulated into a :class:`DispatchMessage`, and the :meth:`on_message`
         will do the dispatching.
 
         """
-        msg = self._codec.dumps(msg)
         if ':' in node_name:
             try:
                 node_name, meth_name = node_name.split(':')
                 new_msg = DispatchMessage(meth_name, msg)
-                msg = self._codec.dumps(new_msg)
             except ValueError:
                 raise ValueError("Invalid node %s" % node_name)
+
         remote = self._nodes[node_name]
-        remote.send(msg)
-        reply = remote.recv()
-        return self._codec.loads(reply)
+        msgstring = self._codec.dumps(msg)
+
+        remote.send(msgstring)
+        if on_recv:
+            incoming_msg = gevent.queue.Queue()
+            self._pendings[msg.id] = incoming_msg
+            gevent.spawn(self.will_handle(msg.id, incoming_msg, on_recv))
+            return
+        else:
+            reply = remote.recv()
+            return self._codec.loads(reply)
+
+
+    def wake_message_worker(self, msg):
+        self._pendings[msg.id].put(msg)
 
 
     def on_message(self, msgstring):
@@ -254,14 +276,33 @@ class Actor(object):
         - otherwise, just call :meth:`_handler`
 
         """
-        handler = self._handler
-        request = self._codec.loads(msgstring)
+        msg = self._codec.loads(msgstring)
+
         logging.debug('handling message in %s' % self.name)
+
+        handler = self._handler
         if issubclass(request.__class__, DispatchMessage):
             method = request.method
             request = self._codec.loads(request.msg)
             handler = getattr(self, method, handler)
-        reply = handler(self, request)
+
+        if msg.id in self._pendings:
+            logging.debug('[%s] resume pending worker for message #%d' % \
+                    (self.name, msg.id))
+            self.wake_message_worker(msg)
+            return
+
+        if hasattr(handler, 'async'):
+            logging.debug('[%s] handling async call' % self.name)
+            replystring = self._codec.dumps(AckMessage(self._mailbox.name))
+            self._mailbox._socket.send(replystring)
+            gevent.spawn(handler, self, msg)
+            return
+
+        logging.debug('[%s] handle synchronous message #%d' % \
+                (self.name, msg.id))
+
+        reply = handler(self, msg)
         if reply:
             replystring = self._codec.dumps(reply)
         else:
