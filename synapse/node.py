@@ -275,7 +275,8 @@ class Actor(object):
         if ':' in node_name:
             try:
                 node_name, meth_name = node_name.split(':')
-                new_msg = DispatchMessage(meth_name, msg)
+                old_msg = self._codec.dumps(msg)
+                msg = DispatchMessage(meth_name, old_msg)
             except ValueError:
                 raise ValueError("Invalid node %s" % node_name)
 
