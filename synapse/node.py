@@ -319,9 +319,9 @@ class Actor(object):
         logging.debug('[%s] handling message #%d' % (self.name, msg.id))
 
         handler = self._handler
-        if issubclass(request.__class__, DispatchMessage):
-            method = request.method
-            request = self._codec.loads(request.msg)
+        if issubclass(msg.__class__, DispatchMessage):
+            method = msg.method
+            msg = self._codec.loads(msg.msg)
             handler = getattr(self, method, handler)
 
         if msg.id in self._pendings:
