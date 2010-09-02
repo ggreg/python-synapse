@@ -61,13 +61,12 @@ import zmq
 
 from message import makeMessage, makeCodec, \
                     HelloMessage, ByeMessage, \
-                    WhereIsMessage, IsAtMessage, AckMessage
+                    WhereIsMessage, IsAtMessage, AckMessage, \
+                    MessageException
 
 
 
 _context = zmq.Context()
-
-
 
 
 
@@ -215,13 +214,11 @@ class Actor(object):
                 'role': 'server'
                 },
                 self.on_message)
-        self._announce = AnnounceClient(config, self.on_announce)
+        self._announce = AnnounceClient(config, self.on_message)
         self._nodes = NodeDirectory(config, self._announce)
         self._handler = handler if handler else getattr(self, 'handle_message', None)
         if hasattr(handler, 'async'):
             self._handler.async = True
-        if self._handler is None:
-            raise TypeError("no message handler provided")
         self._tasks = []
         self._pendings = {}
 
@@ -265,10 +262,14 @@ class Actor(object):
 
 
     def sendrecv(self, node_name, msg, on_recv=None):
-        """Provides a simple interface to perform a send and directly a receive
-        node_name can contains the dispatch method, in this case, the message
-        is encapsulated into a :class:`DispatchMessage`, and the :meth:`on_message`
-        will do the dispatching.
+        """Send a message to a node and receive the reply.
+
+        If the caller defines *on_recv*, :meth:`sendrecv` spawns the callback
+        in a greenlet. The callback will be called on :meth:`on_message` when
+        the actor receives the reply. The reply should commonly be a AckMessage
+        to confirm the recipient is alive.
+
+        Otherwise, it performs a synchronous calls and returns the reply.
 
         """
         remote = self._nodes[node_name]
@@ -298,19 +299,27 @@ class Actor(object):
         Called when the socket is ready to receive data. The request is
         decoded, passed to the handler, and sent back to caller.
 
+        The method tries to dispatch the message with respect to its type. For
+        example, a message 'test_msg' will be handled by the method
+        *on_message_test_msg*. If it cannot find a method with this name, it
+        will call :attr:`_handler`. Then if there is no :attr:`_handler`, it
+        cannot handle the message and logs an error.
+
+        :attr:`_handler` may be considered as a dispatcher provided by a layer
+        on top of the actor. It allows to build custom dispatch and protocol.
+
         If the handler returns None, an :class:`AckMessage` is used. With a
         REQ/REP socket, when a request is received, you **have** to send back
         a response.
-
-        If the request is a subclass of DispatchMessage, two options:
-        - the *method* attribute from the request is an attribute of self, call it
-        - otherwise, just call :meth:`_handler`
 
         """
         msg = self._codec.loads(msgstring)
         logging.debug('[%s] handling message #%d' % (self.name, msg.id))
 
-        handler = self._handler
+        handler = getattr(self, 'on_message_%s' % msg.type, self._handler)
+        if not handler:
+            errmsg = 'cannot handle message %s #%d' % (msg.type, msg.id)
+            raise MessageException('not supported')
         if msg.id in self._pendings:
             logging.debug('[%s] resume pending worker for message #%d' % \
                     (self.name, msg.id))
@@ -338,18 +347,24 @@ class Actor(object):
         return replystring
 
 
-    def on_announce(self, msg):
-        """
-        Handler called by the :class:`AnnounceClient` when it receives an
-        announce for a :class:`Node`.
+    def on_message_hello(self, msg):
+        if msg.uri == self._uri or not self._uri:
+            return
+        try:
+            self._nodes.add(msg.src, msg.uri)
+        except Exception, err:
+            logging.error('[%s] cannot add node %s with uri "%s": "%s"' % \
+                          (self.name, msg.src, msg.uri, str(err)))
 
-        """
-        if msg.type == 'hello':
-            self._nodes.add(msg.src, msg.uri)
-        if msg.type == 'is_at':
-            self._nodes.add(msg.src, msg.uri)
-        if msg.type == 'bye':
-            self._nodes.remove(msg.src, msg.uri)
+
+    def on_message_is_at(self, msg):
+        self._nodes.add(msg.src, msg.uri)
+
+
+    def on_message_bye(self, msg):
+        if msg.uri == self._uri:
+            return
+        self._nodes.remove(msg.src, msg.uri)
 
 
 
@@ -773,11 +788,18 @@ class ZMQServer(ZMQNode):
 
     def loop(self):
         while True:
-            logging.debug('[%s] in server loop' % self.name or 'ANONYMOUS')
-            raw_request = self.recv()
-            raw_reply = self._handler(raw_request)
+            try:
+                logging.debug('[%s] in server loop' % self.name or 'ANONYMOUS')
+                raw_request = self.recv()
+                raw_reply = self._handler(raw_request)
+            except MessageException, err:
+                errmsg = str(err)
+                logging.debug(errmsg)
+                raw_reply = NackMessage(self._name, errmsg)
+
             if raw_reply:
                 self._socket.send(raw_reply)
+
 
 
     def send(self, msg):
