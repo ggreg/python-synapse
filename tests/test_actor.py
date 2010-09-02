@@ -77,11 +77,30 @@ def display_message(msg):
     print 'MESSAGE: %s' % msg.attrs
 
 
+
+from synapse import message
+
+
+class TestMessage(message.Message):
+    type = 'test'
+    def __init__(self, data=None, id=None):
+        message.Message.__init__(self, id)
+        self.data = 'test'
+
+
+    @property
+    def attrs(self):
+        return {
+            'data': self.data
+            }
+
+
+
 def seed():
     common_config = yaml.load(file('config.yaml'))
     client = node.makeNode({'type': common_config['type'], 'uri': actor_config1['uri'], 'role': 'client'})
     codec = message.makeCodec({'type': 'jsonrpc'})
-    msg = codec.dumps(message.makeMessage({'type': 'hello', 'src': 'tester', 'uri': ''}))
+    msg = codec.dumps(message.makeMessage({'type': 'test'}))
     client.connect()
     logging.debug('seed: connected to forwarder node')
     client.send(msg)
