@@ -122,21 +122,7 @@ class NackMessage(Message):
             'src': self.src,
             'msg': self.msg}
 
-class DispatchMessage(Message):
-    """Receiving this message says that the sender want to
-    call a specific method of the :class:`Actor` object.
-    """
-    type = 'dispatch'
-    def __init__(self, method, msg, id=None):
-        Message.__init__(self, id)
-        self.method = method
-        self.msg = msg
 
-    @property
-    def attrs(self):
-        return {
-            'method': self.method,
-            'msg': self.msg}
 
 class MessageCodec(object):
     def loads(self, msgstring):

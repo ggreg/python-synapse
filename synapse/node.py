@@ -61,15 +61,13 @@ import zmq
 
 from message import makeMessage, makeCodec, \
                     HelloMessage, ByeMessage, \
-                    WhereIsMessage, IsAtMessage, AckMessage, \
-                    DispatchMessage
+                    WhereIsMessage, IsAtMessage, AckMessage
 
 
 
 _context = zmq.Context()
 
 
-import types
 
 
 
@@ -79,6 +77,7 @@ def log_on_exit(greenlet):
 
 
 def spawn(*args, **kwargs):
+    import types
     handler = args[0]
     assert handler is not None
     greenlet = gevent_spawn(*args, **kwargs)
@@ -272,14 +271,6 @@ class Actor(object):
         will do the dispatching.
 
         """
-        if ':' in node_name:
-            try:
-                node_name, meth_name = node_name.split(':')
-                old_msg = self._codec.dumps(msg)
-                msg = DispatchMessage(meth_name, old_msg)
-            except ValueError:
-                raise ValueError("Invalid node %s" % node_name)
-
         remote = self._nodes[node_name]
         msgstring = self._codec.dumps(msg)
 
@@ -320,11 +311,6 @@ class Actor(object):
         logging.debug('[%s] handling message #%d' % (self.name, msg.id))
 
         handler = self._handler
-        if issubclass(msg.__class__, DispatchMessage):
-            method = msg.method
-            msg = self._codec.loads(msg.msg)
-            handler = getattr(self, method, handler)
-
         if msg.id in self._pendings:
             logging.debug('[%s] resume pending worker for message #%d' % \
                     (self.name, msg.id))
