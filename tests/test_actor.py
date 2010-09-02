@@ -4,6 +4,7 @@ import sys
 sys.path = ['..'] + sys.path
 import subprocess
 import logging
+logging.getLogger().setLevel(logging.DEBUG)
 import yaml
 import time
 
