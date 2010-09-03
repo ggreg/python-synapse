@@ -45,7 +45,7 @@ from a file. The example below shows the required keys: ::
 - *codec*: codec (coder/decoder) for messages. 'jsonrpc' is self-explaining and
   message JSON-RPC
 - *announce*: parameters specific to the announce service
-   
+
   - *server_uri*: URI of the announce server. An actor queries the server to
     register itself or resolve a name.
   - *pubsub_uri*: URI of the publish and subscribe service. An actor subscribes
@@ -92,7 +92,7 @@ The :class:`Actor` will run in another process. First define its configuration: 
 
 
 Two keys differ from the announce server configuration: *name* and *uri*.
-*name* defines the of the actor's mailbox name. Before an actor sends a
+*name* defines the actor's mailbox name. Before an actor sends a
 message to another actors, it connects to its mailbox. Connecting to the
 mailbox requires to know the network address which is the *uri*.
 
