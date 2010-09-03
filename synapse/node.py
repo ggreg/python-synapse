@@ -76,6 +76,12 @@ def log_on_exit(greenlet):
 
 
 def spawn(*args, **kwargs):
+    """Spawn a greenlet and assert it is not None
+
+    This function wraps :func:`gevent.spawn` and check the callback is not
+    None, as well as the greenlet. It also logs when a greenlet is spawned.
+
+    """
     import types
     handler = args[0]
     assert handler is not None
@@ -111,13 +117,14 @@ class Node(object):
 
 
 def async(func):
+    """Use this simple decorator to tell when a callbackk is asynchronous"""
     func.async = True
     return func
 
 
 
 class NodeDirectory(object):
-    """Stores a node name -> Node object mapping
+    """Provides a mapping interface to resolve a name to a node connection.
 
     A node name is mapped to a single Node object. The Node object is
     instanciated from an URI by :meth:`add`.
@@ -126,6 +133,14 @@ class NodeDirectory(object):
 
     """
     def __init__(self, config, announce=None):
+        """
+        :Parameters:
+          config : mapping
+            defines the transport *type*
+          announce : AnnounceClient
+            used to resolved names
+
+        """
         self._config = {
             'type': config['type'],
             'role': 'client'
@@ -140,8 +155,12 @@ class NodeDirectory(object):
 
     def __getitem__(self, name):
         """
-        If *announce* was defined in the constructor and the name is not in the
-        mapping, the announcer queried to resolve the name to a node URI.
+        Return a connected node.
+
+        If there is *name* key, it tries to resolve the name, to find the node.
+
+        :Parameters:
+          name : str
 
         """
         try:
@@ -154,8 +173,12 @@ class NodeDirectory(object):
 
 
     def add(self, name, uri):
-        """Add a new node to the directory, and if the node is not already
-        connected, connect to it.
+        """Add a new node to the directory. Ff the node is not already
+        connected, connect it.
+
+        :Parameters:
+          name : str
+          uri : str
 
         """
         self._nodes[name] = makeNode({
@@ -183,14 +206,18 @@ class Actor(object):
     create more actors, send more messages, and determine how to respond to the
     next message received.
 
-    You can create an :class:`Actor` by simply pass a callable in the constructor,
-    or you can inherit from :class:`Actor` and implement a *handle_message* method.
+    A message is dispatched by :meth:`on_message` with respect to its *type*,
+    and then handle either by an ad hoc method
+    :meth:`on_message_<message.type>` or a handler passed as the second
+    argument of the constructor. If no ad hoc method matches and no handler was
+    defined, it cannot handle the message and returns an error message to the
+    sender.
 
-    An :class:`Actor` can dispatch messages on different methods.
-    If an :class:`Actor use :meth:`sendrecv` and give "<node name>:<method>" as the
-    node name, the message is encapsulated in a :class:`DispatchMessage`, and the
-    :meth:`on_message` dispatch to the method. If the given method is unknown, it
-    just calls the `handler`.
+    An actor runs in two greenlets:
+    - one for the announce client node
+    - one for the mailbox node
+
+    The announce client node is scheduled first.
 
     :IVariables:
     - `name`: the name that identifies the current node
@@ -256,6 +283,19 @@ class Actor(object):
 
 
     def will_handle(self, msgid, incoming_msg, func):
+        """Wait on the *incoming_msg* queue. Defers the message handling.
+
+        When the message is available, it is passed to *func*.
+
+        :Parameters:
+          msgid : message.Message.id
+            message id registered in pendings messages
+          incoming_msg : gevent.queue.Queue
+            queue that make the greenlet sleeping until a message arrives
+          func : callable
+            callback that takes a message.Message subclass object
+
+        """
         msgstring = incoming_msg.get()
         replystring = func(msgstring)
         del self._pendings[msgid]
@@ -270,6 +310,15 @@ class Actor(object):
         to confirm the recipient is alive.
 
         Otherwise, it performs a synchronous calls and returns the reply.
+
+        Warning: it does not return the reply message from the recipient
+        *node_name*.
+
+        :Parameters:
+          node_name : str
+          msg : message.Message subclass object
+          on_recv : callable
+            callback that takes a message.Message subclass object
 
         """
         remote = self._nodes[node_name]
@@ -291,6 +340,11 @@ class Actor(object):
 
 
     def wake_message_worker(self, msg):
+        """Wake a greenlet to handle message with a specific id.
+
+        It is called by :meth:`on_message` to resume a :meth:`sendrecv`.
+
+        """
         self._pendings[msg.id].put(msg)
 
 
