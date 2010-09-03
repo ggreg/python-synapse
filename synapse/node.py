@@ -367,8 +367,12 @@ class Actor(object):
         a response.
 
         """
-        msg = self._codec.loads(msgstring)
-        logging.debug('[%s] handling message #%d' % (self.name, msg.id))
+
+        try:
+            msg = self._codec.loads(msgstring)
+            logging.debug('[%s] handling message #%d' % (self.name, msg.id))
+        except CodecException, err:
+            raise MessageInvalidException(str(err))
 
         handler = getattr(self, 'on_message_%s' % msg.type, self._handler)
         if not handler:
