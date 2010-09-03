@@ -227,9 +227,19 @@ def makeCodec(config):
 
 
 def makeMessage(msg):
+    """instanciate a message from a mapping
+
+    :Exceptions:
+    - `MessageInvalidException`
+
+    """
     msgtmp = msg.copy()
     subclasses = Message.__subclasses__()
     dispatch = dict((cls.type, cls)for cls in subclasses)
     msgtype = msgtmp['type']
     del msgtmp['type']
-    return dispatch[msgtype](**msgtmp)
+    try:
+        message_instance = dispatch[msgtype](**msgtmp)
+    except TypeError, err:
+        raise MessageInvalidException()
+    return message_instance
