@@ -46,11 +46,11 @@ from a file. The example below shows the required keys: ::
   message JSON-RPC
 - *announce*: parameters specific to the announce service
   - *server_uri*: URI of the announce server. An actor queries the server to
-    register itself or resolve a name.
+  register itself or resolve a name.
   - *pubsub_uri*: URI of the publish and subscribe service. An actor subscribes
-    to this service to receive events from other actors. It commonly updates
-    its :class:`NodeDirectory` when it gets :class:`message.HelloMessage` or
-    :class:`message.ByeMessage`.
+  to this service to receive events from other actors. It commonly updates
+  its :class:`NodeDirectory` when it gets :class:`message.HelloMessage` or
+  :class:`message.ByeMessage`.
 
 Then instanciate the server and start it: ::
 
