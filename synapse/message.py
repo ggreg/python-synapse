@@ -8,6 +8,31 @@ class MessageException(Exception):
 
 
 
+class MessageInvalidException(MessageException):
+    def __init__(self, msg):
+        self._msg = msg
+
+
+    def __str__(self):
+        return 'message invalid : "%s"' % str(self._msg)
+
+
+
+class CodecException(Exception):
+    pass
+
+
+
+class CodecInvalidException(CodecException):
+    def __init__(self, key):
+        self._key = key
+
+
+    def __str__(self):
+        return 'codec "%s" is not supported' % self._key
+
+
+
 class Message(object):
     def __init__(self, id=None):
         self._id = id
