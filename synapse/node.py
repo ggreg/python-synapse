@@ -377,7 +377,8 @@ class Actor(object):
         handler = getattr(self, 'on_message_%s' % msg.type, self._handler)
         if not handler:
             errmsg = 'cannot handle message %s #%d' % (msg.type, msg.id)
-            raise MessageException('not supported')
+            raise MessageInvalidException(msg)
+
         if msg.id in self._pendings:
             logging.debug('[%s] resume pending worker for message #%d' % \
                     (self.name, msg.id))
@@ -395,14 +396,12 @@ class Actor(object):
             return
 
         logging.debug('[%s] handle synchronous message #%d' % \
-                (self.name, msg.id))
+                      (self.name, msg.id))
 
         reply = handler(self, msg)
-        if reply:
-            replystring = self._codec.dumps(reply)
-        else:
-            replystring = self._codec.dumps(AckMessage(self._mailbox.name))
-        return replystring
+        if reply is None:
+            reply = self._codec.dumps(AckMessage(self._mailbox.name))
+        return self._codec.dumps(reply)
 
 
     def on_message_hello(self, msg):
