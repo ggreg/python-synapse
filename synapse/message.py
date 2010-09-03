@@ -218,7 +218,11 @@ def makeCodec(config):
     dispatch = {
         'jsonrpc': MessageCodecJSONRPC,
     }
-    return dispatch[config['type']](config)
+    try:
+        codec_instance = dispatch[config['type']](config)
+    except KeyError, err:
+        raise CodecInvalidException(err)
+    return codec_instance
 
 
 
