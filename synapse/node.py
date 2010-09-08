@@ -62,7 +62,7 @@ import zmq
 from message import makeMessage, makeCodec, \
                     HelloMessage, ByeMessage, \
                     WhereIsMessage, IsAtMessage, AckMessage, \
-                    MessageException
+                    MessageException, CodecException
 
 
 
