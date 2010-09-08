@@ -400,7 +400,7 @@ class Actor(object):
 
         reply = handler(self, msg)
         if reply is None:
-            reply = self._codec.dumps(AckMessage(self._mailbox.name))
+            reply = AckMessage(self._mailbox.name)
         return self._codec.dumps(reply)
 
 
