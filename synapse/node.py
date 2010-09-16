@@ -708,6 +708,9 @@ class ZMQPoller(Poller):
     def unregister(self, node):
         self._poller.unregister(node._socket)
         del self._nodes_by_socket[node._socket]
+        if len(self._nodes_by_socket) == 0 and \
+                self._timeout and self._periodic_handler:
+            self._loop_again = False
 
 
     def poll(self):
