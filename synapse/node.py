@@ -699,7 +699,9 @@ class ZMQPoller(Poller):
         """
         self._nodes_by_socket[waiting_event._socket] = waiting_event
         if getattr(waiting_event, 'loop', None):
-            self._processes.append(gevent.spawn(waiting_event.loop))
+            greenlet = gevent.spawn(waiting_event.loop)
+            greenlet.link_exception(lambda x: self.unregister(waiting_event))
+            self._processes.append(greenlet)
         self._poller.register(waiting_event.socket, zmq.POLLIN)
 
 
