@@ -363,6 +363,7 @@ class Actor(object):
         self._pendings[msg.id].put(msg)
 
 
+    @catch_exceptions(MessageException)
     def on_message(self, msgstring):
         """
         Called when the socket is ready to receive data. The request is
