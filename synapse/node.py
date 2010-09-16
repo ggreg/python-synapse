@@ -200,6 +200,19 @@ class NodeDirectory(object):
 
 
 
+def catch_exceptions(*exceptions):
+    def wrapper(method):
+        def wrapped_method(actor, *args, **kwargs):
+            try:
+                return method(actor, *args, **kwargs)
+            except Exception, err:
+                raise NodeException(str(err),
+                        actor._codec.dumps(NackMessage(actor.name, str(err))))
+        return wrapped_method
+    return wrapper
+
+
+
 class Actor(object):
     """
     An actor receives messages in its mailbox and handles them.
@@ -831,6 +844,17 @@ def makeNode(config, handler=None):
 def makePoller(config):
     dispatch = {'zmq': ZMQPoller}
     return dispatch[config['type']](config)
+
+
+
+class NodeException(Exception):
+    def __init__(self, errmsg, reply):
+        self.errmsg = errmsg
+        self.reply = reply
+
+
+    def __str__(self):
+        return self.errmsg
 
 
 
