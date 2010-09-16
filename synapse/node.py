@@ -414,10 +414,16 @@ class Actor(object):
         logging.debug('[%s] handle synchronous message #%d' % \
                       (self.name, msg.id))
 
-        reply = handler(self, msg)
-        if reply is None:
-            reply = AckMessage(self._mailbox.name)
-        return self._codec.dumps(reply)
+        try:
+            reply = handler(self, msg)
+        except Exception, err:
+            errmsg = str(err)
+            logging.error('[%s] error in handler: %s' % (self.name, errmsg))
+            reply = NackMessage(self.name, errmsg)
+        finally:
+            if reply is None:
+                reply = AckMessage(self.name)
+            return self._codec.dumps(reply)
 
 
     def on_message_hello(self, msg):
