@@ -96,11 +96,12 @@ class TestMessage(message.Message):
 
 
 
-def seed():
+def seed(msg=None):
     common_config = yaml.load(file('config.yaml'))
     client = node.makeNode({'type': common_config['type'], 'uri': actor_config1['uri'], 'role': 'client'})
-    codec = message.makeCodec({'type': 'jsonrpc'})
-    msg = codec.dumps(message.makeMessage({'type': 'test'}))
+    if not msg:
+        codec = message.makeCodec({'type': 'jsonrpc'})
+        msg = codec.dumps(message.makeMessage({'type': 'test'}))
     client.connect()
     logging.debug('seed: connected to forwarder node')
     client.send(msg)
