@@ -643,6 +643,7 @@ class ZMQPoller(Poller):
             self.periodic_handler = periodic_handler
         else:
             self._periodic_handler = None
+        self._loop_again = True
 
 
     def get_timeout(self):
@@ -678,8 +679,7 @@ class ZMQPoller(Poller):
 
 
     def loop(self):
-        cont = True
-        while cont:
+        while self._loop_again:
             logging.debug('[%s] polling...' % self._name)
             cont = self.poll()
 
