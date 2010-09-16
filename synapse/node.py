@@ -875,10 +875,10 @@ class ZMQServer(ZMQNode):
                 logging.debug('[%s] in server loop' % self.name or 'ANONYMOUS')
                 raw_request = self.recv()
                 raw_reply = self._handler(raw_request)
-            except MessageException, err:
-                errmsg = str(err)
+            except NodeException, err:
+                errmsg = str(err.errmsg)
                 logging.debug(errmsg)
-                raw_reply = NackMessage(self._name, errmsg)
+                raw_reply = err.reply
 
             if raw_reply:
                 self._socket.send(raw_reply)
