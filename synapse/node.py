@@ -61,7 +61,8 @@ import zmq
 
 from message import makeMessage, makeCodec, \
                     HelloMessage, ByeMessage, \
-                    WhereIsMessage, IsAtMessage, AckMessage, \
+                    WhereIsMessage, IsAtMessage, \
+                    AckMessage, NackMessage, \
                     MessageException, MessageInvalidException, \
                     CodecException
 
