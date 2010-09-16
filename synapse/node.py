@@ -398,7 +398,7 @@ class Actor(object):
         if msg.id in self._pendings:
             logging.debug('[%s] resume pending worker for message #%d' % \
                     (self.name, msg.id))
-            replystring = self._codec.dumps(AckMessage(self._mailbox.name))
+            replystring = self._codec.dumps(AckMessage(self.name))
             self._mailbox._socket.send(replystring)
             self.wake_message_worker(msg)
             return
@@ -406,7 +406,7 @@ class Actor(object):
         if hasattr(handler, 'async'):
             logging.debug('[%s] handling async call for message #%d' % \
                           (self.name, msg.id))
-            replystring = self._codec.dumps(AckMessage(self._mailbox.name))
+            replystring = self._codec.dumps(AckMessage(self.name))
             self._mailbox._socket.send(replystring)
             gevent.spawn(handler, self, msg)
             return
@@ -879,7 +879,7 @@ class ZMQServer(ZMQNode):
     def loop(self):
         while True:
             try:
-                logging.debug('[%s] in server loop' % self.name or 'ANONYMOUS')
+                logging.debug('[%s] in server loop' % self.name)
                 raw_request = self.recv()
                 raw_reply = self._handler(raw_request)
             except NodeException, err:
@@ -947,7 +947,7 @@ class ZMQSubscribe(ZMQNode):
 
     def loop(self):
         while True:
-            logging.debug('[%s] in subscriber loop' % self.name or 'ANONYMOUS')
+            logging.debug('[%s] in subscriber loop' % self.name)
             raw_request = self.recv()
             self._handler(raw_request)
 
