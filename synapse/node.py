@@ -109,6 +109,7 @@ class Node(object):
     receive messages from or send messages to other nodes connected by an edge.
 
     """
+    name = 'ANONYMOUS'
     def send(self, dst, msg):
         raise NotImplementedError()
 
