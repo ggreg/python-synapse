@@ -194,23 +194,29 @@ class MessageCodecJSONRPC(MessageCodec):
 
 
     def loads(self, msgstring):
-        jsonrpc_msg = json.loads(msgstring)
-        msgtype = jsonrpc_msg['method']
-        msgattrs = jsonrpc_msg['params']
-        msg_dict = {'type': msgtype}
-        msg_dict.update(msgattrs)
-        msg_dict['id'] = jsonrpc_msg['id']
-        msg = makeMessage(msg_dict)
-        return msg
+        try:
+            jsonrpc_msg = json.loads(msgstring)
+            msgtype = jsonrpc_msg['method']
+            msgattrs = jsonrpc_msg['params']
+            msg_dict = {'type': msgtype}
+            msg_dict.update(msgattrs)
+            msg_dict['id'] = jsonrpc_msg['id']
+            msg = makeMessage(msg_dict)
+            return msg
+        except Exception, err:
+            raise CodecException(str(err))
 
 
     def dumps(self, msg):
-        jsonrpc_msg = {
-            'method': msg.type,
-            'params': msg.attrs,
-            'id': msg.id}
+        try:
+            jsonrpc_msg = {
+                'method': msg.type,
+                'params': msg.attrs,
+                'id': msg.id}
 
-        return json.dumps(jsonrpc_msg, cls=DateTimeJSONEncoder)
+            return json.dumps(jsonrpc_msg, cls=DateTimeJSONEncoder)
+        except Exception, err:
+            raise CodecException(str(err))
 
 
 
