@@ -1,0 +1,4 @@
+python:Versions=2.5, 2.6
+python:Provides=python2.5-synapse, python2.6-synapse
+python:Depends=python (>= 2.5), python-support (>= 0.90.0)
+misc:Depends=
