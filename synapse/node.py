@@ -73,7 +73,7 @@ _context = zmq.Context()
 
 
 def log_on_exit(greenlet):
-    logging.debug('greenlet %s exited' % greenlet)
+    logging.getLogger('greenlet').debug('greenlet %s exited' % greenlet)
 
 
 
@@ -94,7 +94,7 @@ def spawn(*args, **kwargs):
         name = handler.__name__
     else:
         name = handler.__class__
-    logging.debug('spawn function %s in greenlet %s' % (name, str(greenlet)))
+    logging.getLogger('greenlet').debug('spawn function %s in greenlet %s' % (name, str(greenlet)))
     assert greenlet is not None
     return greenlet
 
