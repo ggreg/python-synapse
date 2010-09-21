@@ -680,7 +680,6 @@ class ZMQPoller(Poller):
 
     def loop(self):
         while self._loop_again:
-            self._log.debug('polling...')
             cont = self.poll()
 
 
@@ -738,15 +737,12 @@ class ZMQPoller(Poller):
                              (int(missed)-1, timeout))
             self._last_time = last + math.floor(missed) * timeout
             polling_timeout_ms = (timeout-missed) * 1000
-            self._log.debug('reset with %f (last timestamp: %f)' % \
-                          (polling_timeout_ms, self._last_time))
         elif self._timeout:
             self._last_time = time.time()
             polling_timeout_ms = self._timeout*1000
             self._log.debug('last timestamp: %f' % self._last_time)
 
         actives = self._poller.poll(polling_timeout_ms)
-        self._log.debug('%d active sockets' % len(actives))
         for active_socket, poll_event in actives:
             self._log.debug('active socket: %s' % active_socket)
             waiting_event = self._nodes_by_socket[active_socket]
