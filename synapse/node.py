@@ -417,7 +417,7 @@ class Actor(object):
             reply = handler(self, msg)
         except Exception, err:
             errmsg = str(err)
-            self._log.error('error in handler: %s' % errmsg)
+            self._log.error('error in handler: %s' % errmsg, exc_info=True)
             reply = NackMessage(self.name, errmsg)
         finally:
             if reply is None:
