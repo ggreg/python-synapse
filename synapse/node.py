@@ -734,8 +734,8 @@ class ZMQPoller(Poller):
             elapsed = now - last
             missed = elapsed / timeout
             if int(missed) > 1:
-            self._log.info('missed %d polling timeouts of %d' % \
-                             (int(missed)-1, timeout))
+                self._log.info('missed %d polling timeouts of %d' % \
+                               (int(missed)-1, timeout))
             self._last_time = now - (now % timeout)
             polling_timeout_ms = (self._last_time + timeout - now) * 1000 or \
                                  timeout * 1000
