@@ -731,13 +731,15 @@ class ZMQPoller(Poller):
                     not self._periodic_event.is_set():
                 self._periodic_event.set()
                 gevent.sleep()
-            elapsed = time.time() - last
+            now = time.time()
+            elapsed = now - last
             missed = elapsed / timeout
             if int(missed) > 1:
                 logging.info('[%s] missed %d polling timeouts of %d' % \
                              (self._name, int(missed)-1, timeout))
-            self._last_time = last + math.floor(missed) * timeout
-            polling_timeout_ms = (timeout-missed) * 1000
+            self._last_time = now - (now % timeout)
+            polling_timeout_ms = (self._last_time + timeout - now) * 1000 or \
+                                 timeout * 1000
             logging.debug('[%s] reset with %f (last timestamp: %f)' % \
                           (self._name, polling_timeout_ms, self._last_time))
         elif self._timeout:
