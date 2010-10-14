@@ -57,6 +57,7 @@ from ordereddict import OrderedDict
 import gevent
 import gevent.event
 import gevent.queue
+import gevent.coros
 import zmq
 
 from message import makeMessage, makeCodec, \
@@ -770,6 +771,7 @@ class ZMQNode(Node):
         self._uri = config['uri']
         self._socket = None
         self._event = gevent.event.Event()
+        self._lock = gevent.coros.Semaphore()
         self._log = logging.getLogger(self.name)
 
 
@@ -807,7 +809,10 @@ class ZMQNode(Node):
         :param  msg: serializable string
 
         """
-        return self._socket.send(msg)
+        self._lock.acquire()
+        ret = self._socket.send(msg)
+        self._lock.release()
+        return ret
 
 
     def recv(self):
@@ -819,11 +824,13 @@ class ZMQNode(Node):
 
         """
         self._log.debug('waiting in recv()')
+        self._lock.acquire()
         self.wait()
         msgstring = self._socket.recv()
         self._log.debug('socket: %s' % self._socket)
         self._log.debug('recv -> %s' % msgstring)
         self._event.clear()
+        self._lock.release()
         return msgstring
 
 
