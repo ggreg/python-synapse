@@ -74,8 +74,11 @@ _context = zmq.Context()
 
 
 def log_on_exit(greenlet):
-    logging.getLogger('greenlet').debug('greenlet %s exited' % greenlet)
-
+    logger = logging.getLogger('greenlet')
+    logger.debug('greenlet %s exited' % greenlet)
+    if greenlet.exception:
+        logger.error('greenlet exited with exception %s:%s' %
+                     (greenlet.exception.__class__, greenlet.exception))
 
 
 def spawn(*args, **kwargs):
