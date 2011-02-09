@@ -563,14 +563,12 @@ class AnnounceClient(object):
 
 
     def send_to(self, dst, msg):
-        self._log.debug('message %s#%d sent to %s' % \
-                      (msg.type, msg.id, dst.name))
+        self._log.debug('message %s#%d' % (msg.type, msg.id))
         return dst.send(self._codec.dumps(msg))
 
 
     def recv_from(self, src):
         msg = src.recv()
-        self._log.debug('got message from %s' % src.name)
         return self._codec.loads(msg)
 
 
