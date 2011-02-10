@@ -189,7 +189,7 @@ class NodeDirectory(object):
 
         """
         self._nodes[name] = makeNode({
-                'name': 'client:%s' % name,
+                'name': '%s.client' % name,
                 'type': self._config['type'],
                 'role': self._config['role'],
                 'uri':  uri
@@ -251,6 +251,7 @@ class Actor(object):
     """
     def __init__(self, config, handler=None):
         self._uri = config['uri']
+        self._name = config['name']
         self._codec = makeCodec({
                 'type': config['codec']
                 })
@@ -282,7 +283,7 @@ class Actor(object):
 
     @property
     def name(self):
-        return self._mailbox.name
+        return self._name
 
 
     def connect(self):
@@ -463,19 +464,19 @@ class AnnounceServer(object):
 
     """
     def __init__(self, config):
-        self.name = 'announce:server'
+        self.name = 'announce.server'
         self._codec = makeCodec({
                 'type': config['codec']
                 })
         self._server = makeNode({
-                'name': 'announce:server',
+                'name': self.name,
                 'type': config['type'],
                 'uri':  config['announce']['server_uri'],
                 'role': 'server'
                 },
                 self.handle_message)
         self._publisher = makeNode({
-                'name': 'announce:publisher',
+                'name': 'announce.publisher',
                 'type': config['type'],
                 'uri':  config['announce']['pubsub_uri'],
                 'role': 'publish'
@@ -526,20 +527,20 @@ class AnnounceClient(object):
 
     """
     def __init__(self, config, handler=None):
-        self.name = 'announce:client'
+        self.name = '%s.announce' % config['name']
         self._codec = makeCodec({
                 'type': config['codec']
                 })
         self._nodes = []
         self._client = makeNode({
-                'name': 'announce:client',
+                'name': self.name,
                 'type': config['type'],
                 'uri':  config['announce']['server_uri'],
                 'role': 'client'
                 })
         self._nodes.append(self._client)
         self._subscriber = makeNode({
-                'name': 'announce:subscribe',
+                'name': '%s.subscribe' % config['name'],
                 'type': config['type'],
                 'uri':  config['announce']['pubsub_uri'],
                 'role': 'subscribe',
