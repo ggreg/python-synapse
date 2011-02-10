@@ -628,6 +628,54 @@ class PollerException(Exception):
     pass
 
 
+class EventPoller(Poller):
+    def __init__(self, config, periodic_handler=None):
+        self._pid = os.getpid()
+        self._name = 'event.poller@%d' % self._pid
+        self._task = gevent.spawn(self.loop)
+        self._loop_again = True
+        self._greenlets = []
+        self._log = logging.getLogger(self._name)
+
+    def loop(self):
+        while self._loop_again:
+            gevent.core.loop()
+
+    def wait(self):
+        """Simply waits until the greenlet of the poller stops"""
+        import gc
+        collected = gc.collect()
+        self._log.debug('GC collected: %d; garbage: %s' % \
+                      (collected, gc.garbage))
+        return self._task.join()
+
+    def register(self, node):
+        """Register a new node in the poller.
+        If the given node is a `server`, we need to spawn it's :meth:`loop`
+        method in a dedicated greenlet, and watch for its completion.
+
+        :Parameters:
+          node : Node-inherited class
+            the node to register
+        """
+        if getattr(node, 'loop', None):
+            greenlet = gevent.spawn(node.loop)
+            greenlet.link(lambda x: self.unregister(greenlet))
+            self._greenlets.append(greenlet)
+
+    def unregister(self, greenlet):
+        """Unregister a :meth:`poll` method for a `server` node.
+
+        :Parameters:
+          greenlet : greenlet
+            the greenlet instance that stopped
+        """
+        self._greenlets.remove(greenlet)
+
+    def __repr__(self):
+        """Simply returns the class with the current pid"""
+        return '<%s pid:%d>' % (self.__class__.__name__, self._pid)
+
 
 class ZMQPoller(Poller):
     def __init__(self, config, periodic_handler=None):
