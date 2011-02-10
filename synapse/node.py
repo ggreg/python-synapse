@@ -835,6 +835,10 @@ class ZMQNode(Node):
         self._lock.release()
         return msgstring
 
+    def __repr__(self):
+        return "<%s %s (%s)>" % (self.__class__.__name__,
+                                 self._name,
+                                 self._uri)
 
 
 def mixIn(target, mixin_class):
@@ -915,11 +919,6 @@ class ZMQClient(ZMQNode):
         self._socket = _context.socket(zmq.REQ)
         self._socket.connect(self._uri)
         poller.register(self)
-
-
-    def __repr__(self):
-        return '<%s: %s>' % (type(self), self.uri)
-
 
 
 class ZMQPublish(ZMQNode):
