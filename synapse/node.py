@@ -682,137 +682,6 @@ class EventPoller(Poller):
         return '<%s pid:%d>' % (self.__class__.__name__, self._pid)
 
 
-class ZMQPoller(Poller):
-    def __init__(self, config, periodic_handler=None):
-        self._name = 'poller@%d' % os.getpid()
-        self._poller = zmq.Poller()
-        self._nodes_by_socket = OrderedDict()
-        self._task = gevent.spawn(self.loop)
-        self._processes = []
-        self._timeout = config.get('timeout')
-        self._last_time = None
-
-        self._periodic_task = None
-        self._periodic_event = None
-        if periodic_handler:
-            self.periodic_handler = periodic_handler
-        else:
-            self._periodic_handler = None
-        self._loop_again = True
-        self._log = logging.getLogger(self._name)
-
-
-    def get_timeout(self):
-        return self._timeout
-    def set_timeout(self, timeout):
-        self._timeout = timeout
-    timeout = property(get_timeout, set_timeout)
-
-
-    def get_periodic_handler(self):
-        return self._periodic_handler
-    def set_periodic_handler(self, handler):
-        if self._periodic_handler:
-            raise PollerException('periodic handler already defined')
-        self._periodic_handler = handler
-        self._periodic_task = gevent.spawn(self.periodic_loop)
-        self._periodic_event = gevent.event.Event()
-    periodic_handler = property(get_periodic_handler, set_periodic_handler)
-
-
-    def unset_periodic_handler(self, handler):
-        self._periodic_handler = None
-        gevent.kill(self._periodic_task)
-        self._periodic_event = None
-
-
-    def wait(self):
-        import gc
-        collected = gc.collect()
-        self._log.debug('GC collected: %d; garbage: %s' % \
-                      (collected, gc.garbage))
-        return self._task.join()
-
-
-    def loop(self):
-        while self._loop_again:
-            cont = self.poll()
-
-
-    def periodic_loop(self):
-        while True:
-            self._periodic_event.wait()
-            self._periodic_handler()
-            self._periodic_event.clear()
-
-
-    def register(self, waiting_event):
-        """
-        Maps the socket to its node. If the node contains a *loop*, spawns a
-        loop in a greenlet.
-
-        """
-        self._nodes_by_socket[waiting_event._socket] = waiting_event
-        if getattr(waiting_event, 'loop', None):
-            greenlet = gevent.spawn(waiting_event.loop)
-            greenlet.link_exception(lambda x: self.unregister(waiting_event))
-            self._processes.append(greenlet)
-        self._poller.register(waiting_event.socket, zmq.POLLIN)
-
-
-    def unregister(self, node):
-        self._poller.unregister(node._socket)
-        del self._nodes_by_socket[node._socket]
-        if len(self._nodes_by_socket) == 0 and \
-                self._timeout and self._periodic_handler:
-            self._loop_again = False
-
-
-    def poll(self):
-        """
-        Blocks until a event happens on a socket. Then gets all the events and
-        wakes all the corresponding nodes. Finally sleeps to let node greenlets
-        run. If the poller has a *timeout* set, interrupt the polling after
-        *timeout* seconds. When not specified, time values are represented in
-        secondes.
-
-        """
-        polling_timeout_ms = None
-        if self._last_time and self._timeout:
-            timeout = self._timeout
-            last = self._last_time
-            elapsed = time.time() - last
-            if elapsed >= timeout and self._periodic_handler and \
-                    not self._periodic_event.is_set():
-                self._periodic_event.set()
-                gevent.sleep()
-            now = time.time()
-            elapsed = now - last
-            missed = elapsed / timeout
-            if int(missed) > 1:
-                self._log.info('missed %d polling timeouts of %d' % \
-                               (int(missed)-1, timeout))
-            self._last_time = now - (now % timeout)
-            polling_timeout_ms = (self._last_time + timeout - now) * 1000 or \
-                                 timeout * 1000
-        elif self._timeout:
-            self._last_time = time.time()
-            polling_timeout_ms = self._timeout*1000
-            self._log.debug('last timestamp: %f' % self._last_time)
-
-        actives = self._poller.poll(polling_timeout_ms)
-        for active_socket, poll_event in actives:
-            self._log.debug('active socket: %s' % active_socket)
-            waiting_event = self._nodes_by_socket[active_socket]
-            self._log.debug('wake %s' % waiting_event.name)
-            waiting_event.wake()
-        if actives:
-            gevent.sleep()
-
-        return True
-
-
-
 class ZMQNode(Node):
     """Node built on top of ZeroMQ.
 
@@ -919,7 +788,7 @@ def makeNode(config, handler=None):
 
 
 def makePoller(config):
-    dispatch = {'zmq': ZMQPoller}
+    dispatch = {'zmq': EventPoller}
     return dispatch[config['type']](config)
 
 
@@ -1022,4 +891,4 @@ class ZMQSubscribe(ZMQNode):
 
 
 
-poller = ZMQPoller({})
+poller = EventPoller({})
