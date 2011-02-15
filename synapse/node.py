@@ -60,13 +60,13 @@ import gevent.queue
 import gevent.coros
 import zmq
 
-from message import makeMessage, makeCodec, \
-                    HelloMessage, ByeMessage, \
-                    WhereIsMessage, IsAtMessage, \
-                    UnknownNodeMessage, AckMessage, \
-                    NackMessage, MessageException, \
-                    MessageInvalidException, \
-                    CodecException
+from synapse.message import makeMessage, makeCodec, \
+                            HelloMessage, ByeMessage, \
+                            WhereIsMessage, IsAtMessage, \
+                            UnknownNodeMessage, AckMessage, \
+                            NackMessage, MessageException, \
+                            MessageInvalidException, \
+                            CodecException
 
 
 
