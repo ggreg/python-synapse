@@ -694,7 +694,6 @@ class ZMQNode(Node):
         self._name = config.get('name', 'ANONYMOUS')
         self._uri = config['uri']
         self._socket = None
-        self._event = gevent.event.Event()
         self._lock = gevent.coros.Semaphore()
         self._log = logging.getLogger(self.name)
 
@@ -712,19 +711,6 @@ class ZMQNode(Node):
     @property
     def socket(self):
         return self._socket
-
-
-    @property
-    def event(self):
-        return self._event
-
-
-    def wait(self):
-        self._event.wait()
-
-
-    def wake(self):
-        self._event.set()
 
 
     def send(self, msg):
@@ -749,11 +735,9 @@ class ZMQNode(Node):
         """
         self._log.debug('waiting in recv()')
         self._lock.acquire()
-        self.wait()
         msgstring = self._socket.recv()
         self._log.debug('socket: %s' % self._socket)
         self._log.debug('recv -> %s' % msgstring)
-        self._event.clear()
         self._lock.release()
         return msgstring
 
