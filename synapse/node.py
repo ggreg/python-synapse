@@ -58,7 +58,7 @@ import gevent
 import gevent.event
 import gevent.queue
 import gevent.coros
-import zmq
+from gevent_zeromq import zmq
 
 from synapse.message import makeMessage, makeCodec, \
                             HelloMessage, ByeMessage, \
