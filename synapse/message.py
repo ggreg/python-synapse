@@ -125,6 +125,18 @@ class IsAtMessage(Message):
 
 
 
+class UnknownNodeMessage(Message):
+    type = 'unknown_node'
+    def __init__(self, name, id=None):
+        super(UnknownNodeMessage, self).__init__(id)
+        self.name = name
+
+    @property
+    def attrs(self):
+        return {'name': self.name}
+
+
+
 class AckMessage(Message):
     type = 'ack'
     def __init__(self, src, id=None):

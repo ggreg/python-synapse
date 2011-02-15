@@ -63,8 +63,9 @@ import zmq
 from message import makeMessage, makeCodec, \
                     HelloMessage, ByeMessage, \
                     WhereIsMessage, IsAtMessage, \
-                    AckMessage, NackMessage, \
-                    MessageException, MessageInvalidException, \
+                    UnknownNodeMessage, AckMessage, \
+                    NackMessage, MessageException, \
+                    MessageInvalidException, \
                     CodecException
 
 
@@ -175,7 +176,8 @@ class NodeDirectory(object):
         except KeyError:
             if self._announce:
                 rep = self._announce.where_is(name)
-                return self.add(name, rep.uri)
+                if rep.type == 'is_at':
+                    return self.add(name, rep.uri)
             raise ValueError("Node %s is unknown" % name)
 
 
@@ -501,8 +503,11 @@ class AnnounceServer(object):
             self._nodes.remove(msg.src, msg.uri)
             reply = AckMessage(self._server.name)
         if msg.type == 'where_is':
-            node = self._nodes[msg.name]
-            reply = IsAtMessage(msg.name, node.uri)
+            if msg.name not in self._nodes:
+                reply = UnknownNodeMessage(msg.name)
+            else:
+                node = self._nodes[msg.name]
+                reply = IsAtMessage(msg.name, node.uri)
         return self._codec.dumps(reply)
 
 
