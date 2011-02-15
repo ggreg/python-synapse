@@ -9,5 +9,5 @@ setup(name='synapse',
       author_email  = 'greg@0x80.net',
       url           = 'http://github.org/ggreg/python-synapse',
       packages      = ['synapse'],
-      requires      = ['pyzmq (>= 2.0.7)']
+      requires      = ['pyzmq (>= 2.1.0)']
      )
