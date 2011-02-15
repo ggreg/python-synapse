@@ -640,11 +640,50 @@ class EventPoller(Poller):
         self._task = gevent.spawn(self.loop)
         self._loop_again = True
         self._greenlets = []
+        self._periodical_handlers = []
         self._log = logging.getLogger(self._name)
+
+    def add_periodical_handler(self, handler, timeout):
+        """Install a new periodical handler.
+        If the :meth:`periodical_loop` exits, it can mean that the
+        :meth:`handler` decided to stop, or it exited with an exception.
+        In both case, we need to know when it stopped.
+
+        :Parameters:
+          handler : callable
+            the callable to call each period
+          timeout : integer
+            time between each poll
+        """
+        assert(callable(handler))
+        assert(timeout > 0)
+        period = gevent.spawn(self.periodical_loop, handler, timeout)
+        period.link(lambda x: self.remove_periodical_handler(period))
+        self._periodical_handlers.append(period)
+
+    def remove_periodical_handler(self, periodical):
+        """Remove a periodical handler from the list of running handlers.
+        If no more handlers are running, #@!#
+
+        """
+        self._periodical_handlers.remove(periodical)
 
     def loop(self):
         while self._loop_again:
             gevent.core.loop()
+
+    def periodical_loop(self, handler, timeout):
+        """Call the `handler` each `timeout` seconds.
+        This method is called in a dedicated greenlet.
+
+        :Parameters:
+          handler : callable
+            the callable to call each period
+          timeout : integer
+            time between each poll
+        """
+        while handler():
+            gevent.sleep(timeout)
 
     def wait(self):
         """Simply waits until the greenlet of the poller stops"""
