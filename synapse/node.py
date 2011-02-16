@@ -53,7 +53,6 @@ import math
 import time
 import os
 
-from ordereddict import OrderedDict
 import gevent
 import gevent.event
 import gevent.queue
