@@ -4,16 +4,13 @@ Provides Node and Actor.
 The value of the key *type* in the configuration is used to define the
 underlying protocol. Currently there are some global variables specific
 to zmq like _context and poller. _context holds a single :class:`zmq.Context`
-that is shared among all node sockets. The poller is a :class:`zmq.Poller`.
-However a :class:`zmq.Poller` can poll a posix socket as well as a zmq socket.
+that is shared among all node sockets.
 
 The module relies on gevent for its execution. The poller runs in a dedicated
 greenlet. When it registers a node, if the node provides a loop, it spawns it
-in a new greenlet. Blocking calls like :meth:`Node.recv` must be protected by
-an event or another way to put the greenlet into sleep and wake it up once it
-will not block.
-
-For this purpose, we use a :class:`gevent.event.Event` to wait.
+in a new greenlet. Synapse uses the `gevent-zeromq` library to modify
+:class:`zmq.Socket` in order to protect blocking read, write using a
+:class:`gevent.event.Event` object.
 
 Keep in mind greenlets are scheduled in a round-robin fashion. It means if we
 start two actors A1 and A2, each one has two nodes, its mailbox and the
@@ -28,19 +25,33 @@ Execution starts in the poller: ::
 
     |*poller*| A1.mbox | A1.as | A2.mbox | A2.as |
 
-The poller blocks in :meth:`Poller.poll` until a incoming message is available
-in a socket. When it happens the poller sets the node's event corresponding to
-the socket and sleeps to let other greenlets run. It wakes all waiting events
-before sleeping. Let consider A2 receives a message in its mailbox: ::
+As the :class:`EventPoller` is always the one giving hand to others greenlets
+(using :meth:`gevent.sleep`), any greenlet can run concurrently among greenlet
+spawned by synapse.
+
+For example, a code using :class:`gevent.socket` can be safely used.
+
+    | poller | A1.mbox | A1.as | *gevent.socket* | A2.mbox | A2.as |
+                                      ^
+                    will be called when the fd is ready
+
+More generally, any custom code using gevent can be run along with synapse, as
+long as it does not forget to give the hand back before any blocking call.
 
 
-    | poller | A1.mbox | A1.as | A2.mbox | A2.as |
-                  ^        ^
-                 still waiting
+Synapse also provides periodical handlers, which define a callable that will be
+called indefinitely, waiting for the given period between each call, and until
+the handle call returns explicitely "False" or raise an exception.
 
-    | poller | A1.mbox | A1.as |*A2.mbox*| A2.as |
-                                    ^
-                       activates and calls its handler
+It works as following:
+
+    while handler() is not False:
+        wait `period` seconds
+
+Because we wait the given period after the call, if the handler call takes
+time, this time will not be consumed on the waiting time. For example, if the
+period is 10s, and the handler call takes 5s, the total time for a loop will be
+15s (5s for the call, 10s for the waiting part).
 
 .. note:: every function that may block MUST be protected by a event or another
    data structure that will be wake up either directly by the poller or
