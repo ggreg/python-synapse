@@ -84,38 +84,6 @@ _context = zmq.Context()
 
 
 
-def log_on_exit(greenlet):
-    logger = logging.getLogger('greenlet@%d' % os.getpid())
-    logger.debug('greenlet %s exited' % greenlet)
-    if greenlet.exception:
-        logger.error('greenlet exited with exception %s:%s' %
-                     (greenlet.exception.__class__, greenlet.exception))
-
-
-def spawn(*args, **kwargs):
-    """Spawn a greenlet and assert it is not None
-
-    This function wraps :func:`gevent.spawn` and check the callback is not
-    None, as well as the greenlet. It also logs when a greenlet is spawned.
-
-    """
-    import types
-    handler = args[0]
-    assert handler is not None
-    greenlet = gevent_spawn(*args, **kwargs)
-    greenlet.link(log_on_exit)
-    if isinstance(handler, types.FunctionType) or \
-            isinstance(handler, types.MethodType):
-        name = handler.__name__
-    else:
-        name = handler.__class__
-    logging.getLogger('greenlet@%d' % os.getpid()).debug(
-        'spawn function %s in greenlet %s' % (name, str(greenlet)))
-    assert greenlet is not None
-    return greenlet
-
-gevent_spawn = gevent.spawn
-gevent.spawn = spawn
 
 
 
@@ -365,7 +333,7 @@ class Actor(object):
             self._log.debug('async sendrecv')
             incoming_msg = gevent.queue.Queue()
             self._pendings[msg.id] = incoming_msg
-            gevent.spawn(self.will_handle, msg.id, incoming_msg, on_recv)
+            poller.spawn(self.will_handle, msg.id, incoming_msg, on_recv)
 
         self._log.debug('handshake reply from %s in sendrecv()' % \
                         node_name)
@@ -426,7 +394,7 @@ class Actor(object):
             self._log.debug('handling async call for message #%d' % msg.id)
             replystring = self._codec.dumps(AckMessage(self.name))
             self._mailbox._socket.send(replystring)
-            gevent.spawn(handler, self, msg)
+            poller.spawn(handler, self, msg)
             return
 
         self._log.debug('handle synchronous message #%d' % msg.id)
@@ -615,8 +583,7 @@ class AnnounceClient(object):
 
 class Poller(object):
     """
-    Monitors nodes. Registers and unregisters nodes with respectively
-    :meth:`register` and :meth:`unregister`.
+    Monitors nodes. Registers nodes with :meth:`register`.
 
     """
     def loop(self):
@@ -624,10 +591,6 @@ class Poller(object):
 
 
     def register(self, node):
-        raise NotImplementedError()
-
-
-    def unregister(self, node):
         raise NotImplementedError()
 
 
@@ -648,11 +611,11 @@ class EventPoller(Poller):
     def __init__(self, config, periodic_handler=None):
         self._pid = os.getpid()
         self._name = 'event.poller@%d' % self._pid
+        self._log = logging.getLogger(self._name)
         self._task = gevent.spawn(self.loop)
         self._loop_again = True
         self._greenlets = []
         self._periodical_handlers = []
-        self._log = logging.getLogger(self._name)
 
     def add_periodical_handler(self, handler, timeout):
         """Install a new periodical handler.
@@ -668,16 +631,8 @@ class EventPoller(Poller):
         """
         assert(callable(handler))
         assert(timeout > 0)
-        period = gevent.spawn(self.periodical_loop, handler, timeout)
-        period.link(lambda x: self.remove_periodical_handler(period))
+        period = self.spawn(self.periodical_loop, handler, timeout)
         self._periodical_handlers.append(period)
-
-    def remove_periodical_handler(self, periodical):
-        """Remove a periodical handler from the list of running handlers.
-        If no more handlers are running, #@!#
-
-        """
-        self._periodical_handlers.remove(periodical)
 
     def loop(self):
         while self._loop_again:
@@ -693,7 +648,7 @@ class EventPoller(Poller):
           timeout : integer
             time between each poll
         """
-        while handler():
+        while handler() is not False:
             gevent.sleep(timeout)
 
     def wait(self):
@@ -714,18 +669,62 @@ class EventPoller(Poller):
             the node to register
         """
         if getattr(node, 'loop', None):
-            greenlet = gevent.spawn(node.loop)
-            greenlet.link(lambda x: self.unregister(greenlet))
-            self._greenlets.append(greenlet)
+            greenlet = self.spawn(node.loop)
 
-    def unregister(self, greenlet):
-        """Unregister a :meth:`poll` method for a `server` node.
+    def spawn(self, handler, *args, **kwargs):
+        """Spawn a new greenlet, and link it to the current greenlet when an
+        exception is raise. This will cause to make the current process to stop
+        if any of the spawned greenlet fail with an unhandled exception.
+        The greenlet successful completion is also linked to the
+        :meth:`remove` method to remove it from the list of greenlets.
+
+        :Parameters:
+          args : args
+            positional arguments
+          kwargs : keyword args
+            keyword arguments
+        """
+        import types
+        assert handler is not None
+        greenlet = gevent.spawn_link_exception(self.__spawn_handler__(handler),
+                                               *args, **kwargs)
+        greenlet.link(lambda x: self.remove(greenlet))
+        self._greenlets.append(greenlet)
+        if isinstance(handler, types.FunctionType) or \
+                isinstance(handler, types.MethodType):
+            name = handler.__name__
+        else:
+            name = handler.__class__
+        self._log.debug('spawn function %s in greenlet %s' % (name, str(greenlet)))
+        assert greenlet is not None
+        return greenlet
+
+    def remove(self, greenlet):
+        """Remove a greenlet from the list of currently running greenlets
 
         :Parameters:
           greenlet : greenlet
             the greenlet instance that stopped
         """
+        self._log.debug("greenlet %s exited" % str(greenlet))
         self._greenlets.remove(greenlet)
+
+    def __spawn_handler__(self, handler):
+        """Just a simple decorator that will be used when spawning greenlets,
+        to catch exceptions to log them, and re-raise the exception
+
+        """
+        from functools import wraps
+        @wraps(handler)
+        def method(*args, **kwargs):
+            """Catch exceptions and log them"""
+            try:
+                return handler(*args, **kwargs)
+            except Exception, err:
+                import traceback
+                map(self._log.error, traceback.format_exc().splitlines())
+                raise
+        return method
 
     def __repr__(self):
         """Simply returns the class with the current pid"""
