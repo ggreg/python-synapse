@@ -104,7 +104,7 @@ class Node(object):
 
 
 def async(func):
-    """Use this simple decorator to tell when a callbackk is asynchronous"""
+    """Use this simple decorator to tell when a callback is asynchronous"""
     func.async = True
     return func
 
