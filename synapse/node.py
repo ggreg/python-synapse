@@ -616,6 +616,28 @@ class EventPoller(Poller):
         self._loop_again = True
         self._greenlets = []
         self._periodical_handlers = []
+### kept for backward compatiblity
+        self._old_timeout = None
+        self._old_periodic_handler = None
+
+    def get_timeout(self):
+        return self._old_timeout
+    def set_timeout(self, timeout):
+        self._old_timeout = timeout
+    timeout = property(get_timeout, set_timeout)
+
+
+    def get_periodic_handler(self):
+        return self._old_periodic_handler
+    def set_periodic_handler(self, handler):
+        if self._old_periodic_handler:
+            raise PollerException('periodic handler already defined')
+        if self._old_timeout is None:
+            raise PollerException('missing timeout')
+        self._old_periodic_handler = handler
+        self.add_periodical_handler(handler, self._old_timeout)
+    periodic_handler = property(get_periodic_handler, set_periodic_handler)
+### END
 
     def add_periodical_handler(self, handler, timeout):
         """Install a new periodical handler.
