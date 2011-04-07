@@ -33,9 +33,16 @@ def periodic_handler():
 
 
 def test_poller():
+    import logging
+    from logging import StreamHandler
+    logger = logging.getLogger()
+    logger.setLevel(logging.DEBUG)
+    stream = StreamHandler()
+    formatter = logging.Formatter('%(name)s: %(levelname)s %(message)s')
+    stream.setFormatter(formatter)
+    logger.addHandler(stream)
     common_config = yaml.load(file('config.yaml'))
-    node.poller.timeout = 5
-    node.poller.periodic_handler = periodic_handler
+    node.poller.add_periodical_handler(periodic_handler, 5)
     actor_config1.update(common_config)
     actor = node.Actor(actor_config1, echo_reply_handler)
     actor.connect()
