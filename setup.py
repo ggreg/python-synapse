@@ -3,7 +3,7 @@
 from distutils.core import setup
 
 setup(name='synapse',
-      version       = '0.1',
+      version       = '0.2',
       description   = 'Distributed communication module',
       author        = 'Greg Leclercq',
       author_email  = 'greg@0x80.net',

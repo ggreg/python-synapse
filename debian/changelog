@@ -1,3 +1,26 @@
+python-synapse (0.2-1) unstable; urgency=low
+
+  * clearer __repr__ return for ZMQNode classes
+  * first draft of a EventPoller
+  * improved handling of unknown node
+  * bumped dependency version (pyzmq/zeromq1 > strictly= 2.1.0)
+  * fix local import of messages, use an absolute import path
+  * removed deprecated :class:`ZMQPoller`
+  * removed old mechanism where we were mimicking what gevent-zeromq now do for us
+  * provides an interface to add multiples periodical handler
+  * put the pid in logger name for everything that can be present in different processes with the same name
+  * use gevent-zeromq to make zeromq sockets 'gevent-aware'
+  * removed now unused dependency on OrderedDict
+  * updated documentation
+  * rewrite the way greenlets/nodes are spawned
+  * bump version of pyzmq to >=2.1.1 and add dependency on gevent_zeromq
+  * just a small typo in docstring
+  * reintroduce the `timeout`, `periodic_handler` for backward compatibility
+  * tests: made them use StreamHandler to output on stderr, and few slight changes
+  * add test with two actors that does ping/pong, and a WSGIServer serving HTTP in the same process
+
+ -- Thomas Meson <zllak@hycik.org>  Wed, 27 Apr 2011 10:57:15 +0200
+
 python-synapse (0.1-1) unstable; urgency=low
 
   * Initial release
