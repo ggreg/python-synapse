@@ -39,6 +39,7 @@ class Node1(node.Actor):
 
     def periodical(self):
         try:
+            logging.info('sendrecv')
             ret = self.sendrecv('node2', message.AckMessage(self.name))
         except Exception, err:
             self._log.error('%s: %s' % (err.__class__.__name__, err))
@@ -58,6 +59,7 @@ class Node2(node.Actor):
         except Exception, err:
             self._log.error('%s: %s' % (err.__class__.__name__, err))
 
+    @node.async
     def on_message_ack(self, actor, request):
         self._log.info("received a AckMessage, replying a NackMessage")
         return message.NackMessage(self.name, self.name)
@@ -79,6 +81,7 @@ def create_wsgiserver():
 if __name__ == '__main__':
     import logging
     from logging import StreamHandler
+    from gevent import spawn
     logger = logging.getLogger()
     logger.setLevel(logging.INFO)
     stream = StreamHandler()
@@ -88,8 +91,10 @@ if __name__ == '__main__':
     common_config = yaml.load(file('config.yaml'))
     node1_conf.update(common_config)
     node2_conf.update(common_config)
+    logging.info('starting node 1')
     node1 = Node1(node1_conf)
     node1.connect()
+    logging.info('starting node 2')
     node2 = Node2(node2_conf)
     node2.connect()
     create_wsgiserver()
