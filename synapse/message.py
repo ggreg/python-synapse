@@ -194,7 +194,7 @@ class DateTimeJSONEncoder(json.JSONEncoder):
                 isinstance(obj, datetime.time):
             return obj.isoformat()
         elif isinstance(obj, xmlrpclib.DateTime):
-            return datetime.datetime.strptime(obj.value, "%Y-%m-%d %H:%M:%S.%f")
+            return datetime.datetime.strptime(obj.value, "%Y%m%dT%H:%M:%S")
         else:
             return super(self.__class__, self).default(obj)
 
@@ -258,6 +258,7 @@ def makeMessage(msg):
     del msgtmp['type']
     try:
         message_instance = dispatch[msgtype](**msgtmp)
-    except TypeError, err:
-        raise MessageInvalidException()
+    except KeyError, err:
+        raise MessageInvalidException("%s is not a subclass of message" % 
+                                      msgtype)
     return message_instance
