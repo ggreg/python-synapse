@@ -29,7 +29,7 @@ class CodecInvalidException(CodecException):
 
 
     def __str__(self):
-        return 'codec "%s" is not supported' % self._key
+        return 'codec %s is not supported' % self._key
 
 
 
@@ -259,6 +259,6 @@ def makeMessage(msg):
     try:
         message_instance = dispatch[msgtype](**msgtmp)
     except KeyError, err:
-        raise MessageInvalidException("%s is not a subclass of message" % 
+        raise MessageInvalidException("%s is not a subclass of Message" % 
                                       msgtype)
     return message_instance
