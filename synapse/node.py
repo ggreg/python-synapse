@@ -1,3 +1,6 @@
+#!/usr/bin/env python
+# -*- coding: utf8 -*-
+
 """
 Provides Node and Actor.
 
@@ -82,10 +85,42 @@ from synapse.message import makeMessage, makeCodec, \
 
 _context = zmq.Context()
 
+# decorators
+
+def async(func):
+    """Use this simple decorator to tell when a callback is asynchronous"""
+    func.async = True
+    return func
 
 
+def catch_exceptions(*exceptions):
+    def wrapper(method):
+        def wrapped_method(actor, *args, **kwargs):
+            try:
+                return method(actor, *args, **kwargs)
+            except Exception, err:
+                raise NodeException(str(err),
+                        actor._codec.dumps(NackMessage(actor.name, str(err))))
+        return wrapped_method
+    return wrapper
+
+# exceptions
+
+class NodeException(Exception):
+    def __init__(self, errmsg, reply):
+        self.errmsg = errmsg
+        self.reply = reply
 
 
+    def __str__(self):
+        return self.errmsg
+
+
+class PollerException(Exception):
+    pass
+
+
+# base types
 
 class Node(object):
     """Node abstract interface.
@@ -100,14 +135,6 @@ class Node(object):
 
     def recv(self, src):
         raise NotImplementedError()
-
-
-
-def async(func):
-    """Use this simple decorator to tell when a callback is asynchronous"""
-    func.async = True
-    return func
-
 
 
 class NodeDirectory(object):
@@ -161,7 +188,7 @@ class NodeDirectory(object):
 
 
     def add(self, name, uri):
-        """Add a new node to the directory. Ff the node is not already
+        """Add a new node to the directory. If the node is not already
         connected, connect it.
 
         :Parameters:
@@ -181,22 +208,18 @@ class NodeDirectory(object):
         return self._nodes[name]
 
 
-    def remove(self, name, uri):
+    def remove(self, name, uri=None):
+        """
+        remove a node from the direcory
+        Arguments:
+            :name name: name of the node to remove
+            :name type: str
+            :name uri: unused param, keep for compatibility
+            :name uri: str
+            :return: None
+            :raises KeyError: if the node is not register is the directory
+        """
         del self._nodes[name]
-
-
-
-def catch_exceptions(*exceptions):
-    def wrapper(method):
-        def wrapped_method(actor, *args, **kwargs):
-            try:
-                return method(actor, *args, **kwargs)
-            except Exception, err:
-                raise NodeException(str(err),
-                        actor._codec.dumps(NackMessage(actor.name, str(err))))
-        return wrapped_method
-    return wrapper
-
 
 
 class Actor(object):
@@ -603,8 +626,6 @@ class Poller(object):
 
 
 
-class PollerException(Exception):
-    pass
 
 
 class EventPoller(Poller):
@@ -846,16 +867,6 @@ def makePoller(config):
     dispatch = {'zmq': EventPoller}
     return dispatch[config['type']](config)
 
-
-
-class NodeException(Exception):
-    def __init__(self, errmsg, reply):
-        self.errmsg = errmsg
-        self.reply = reply
-
-
-    def __str__(self):
-        return self.errmsg
 
 
 
