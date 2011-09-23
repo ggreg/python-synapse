@@ -85,6 +85,14 @@ from synapse.message import makeMessage, makeCodec, \
 
 _context = zmq.Context()
 
+# FIXME: unused
+# remove it ?
+def mixIn(target, mixin_class):
+    if mixin_class not in target.__bases__:
+        target.__bases__ = (mixin_class,) + target.__bases__
+    return target
+
+
 # decorators
 
 def async(func):
@@ -839,47 +847,14 @@ class ZMQNode(Node):
                                  self._uri)
 
 
-def mixIn(target, mixin_class):
-    if mixin_class not in target.__bases__:
-        target.__bases__ = (mixin_class,) + target.__bases__
-    return target
-
-
-
-def makeNode(config, handler=None):
-    dispatch = {'zmq': {
-                'class': ZMQNode,
-                'roles': {
-                    'client':   ZMQClient,
-                    'server':   ZMQServer,
-                    'publish':  ZMQPublish,
-                    'subscribe':ZMQSubscribe}}}
-
-    cls = dispatch[config['type']]['class']
-    if 'role' in config:
-        cls = dispatch[config['type']]['roles'][config['role']]
-
-    return cls(config, handler) if handler else cls(config)
-
-
-
-def makePoller(config):
-    dispatch = {'zmq': EventPoller}
-    return dispatch[config['type']](config)
-
-
-
-
 class ZMQServer(ZMQNode):
     def __init__(self, config, handler):
         ZMQNode.__init__(self, config)
         self._handler = handler
 
-
     def start(self):
         self._socket = _context.socket(zmq.REP)
         self._socket.bind(self._uri)
-
 
     def loop(self):
         while True:
@@ -894,8 +869,6 @@ class ZMQServer(ZMQNode):
 
             if raw_reply:
                 self._socket.send(raw_reply)
-
-
 
     def send(self, msg):
         raise NotImplementedError()
@@ -956,5 +929,27 @@ class ZMQSubscribe(ZMQNode):
         raise NotImplementedError()
 
 
+# factories function
 
+def makeNode(config, handler=None):
+    dispatch = {'zmq': {
+                'class': ZMQNode,
+                'roles': {
+                    'client':   ZMQClient,
+                    'server':   ZMQServer,
+                    'publish':  ZMQPublish,
+                    'subscribe':ZMQSubscribe}}}
+
+    cls = dispatch[config['type']]['class']
+    if 'role' in config:
+        cls = dispatch[config['type']]['roles'][config['role']]
+
+    return cls(config, handler) if handler else cls(config)
+
+
+def makePoller(config):
+    dispatch = {'zmq': EventPoller}
+    return dispatch[config['type']](config)
+
+# create the poller
 poller = EventPoller({})

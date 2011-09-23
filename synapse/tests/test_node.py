@@ -3,7 +3,7 @@
 
 from unittest import TestCase
 
-
+from synapse.node import poller
 
 class TestDecorators(TestCase):
 
@@ -58,7 +58,7 @@ class TestNode(TestCase):
         self.assertRaises(NotImplementedError,n.recv,'src')
         
     def test_nodedirectory(self):
-        from synapse.node import NodeDirectory
+        from synapse.node import NodeDirectory, ZMQClient
         
         config = {
             'type': 'zmq',
@@ -69,10 +69,41 @@ class TestNode(TestCase):
         
         nd.add('test','ipc://./test.unix')
         self.assertTrue( 'test' in nd)
+        
+        node = nd['test']
+        self.assertTrue(isinstance(node, ZMQClient))
+
         nd.remove('test','FIXME: unused_param')
         self.assertFalse( 'test' in nd)
 
         self.assertRaises(KeyError,nd.remove,'test')
+
+
+        self.assertRaises(ValueError,nd.__getitem__,'not_found')
+
+    def test_nodedirectory_anounced(self):
+        from synapse.node import NodeDirectory, ZMQClient
+        
+        config = {
+            'type': 'zmq',
+            'codec': 'jsonrpc'
+            }
+        class DummyMessage(object):
+            type = 'is_at'
+            uri = 'ipc://./test2.unix' 
+
+        class DummyAnnoucer(object):
+            def where_is(self,name):
+                return DummyMessage()
+
+        announcer = DummyAnnoucer()
+
+        nd = NodeDirectory(config,announcer)
+        node = nd['not_found']
+        self.assertTrue(isinstance(node, ZMQClient))
+
+        
+
 
     def test_poller(self):
         from synapse.node import Poller, poller, PollerException
@@ -93,8 +124,6 @@ class TestNode(TestCase):
         poller.periodic_handler = handler
         self.assertEquals( poller.periodic_handler, handler )
         # end test backward
-        
-
     
         
     def test_actor(self):
@@ -111,3 +140,166 @@ class TestNode(TestCase):
             'uri': 'ipc://./test2.unix'
             }
     
+    
+    def test_mixin(self):
+        """
+        FIXME: unused function: remove it ?
+        """
+        from synapse.node import mixIn
+        
+        class A(object):pass
+        class B: pass
+        
+        mixIn(A,B)
+        self.assertTrue(isinstance(A(),B))
+
+
+class TestZMQ(TestCase):
+    
+    def test_zmqnode(self):
+        from synapse.node import ZMQNode
+        
+        conf = {
+                'uri':'icp://./test.unix',
+                'name':'zmcnode',
+                }
+        
+        class DummySocket(object):
+            def send(self,msg):
+                return "dummy_socket_send"
+            def recv(self):
+                return "dummy_socket_recv"
+            
+        n = ZMQNode(conf)
+        self.assertEquals(n.name,conf['name'])
+        self.assertEquals(n.uri,conf['uri'])
+        self.assertEquals(repr(n),"<ZMQNode zmcnode (icp://./test.unix)>")
+
+        dummysocket = DummySocket()
+        n._socket = dummysocket
+        self.assertEquals(n.socket,dummysocket)
+        self.assertEquals(n.send(""),"dummy_socket_send")
+        self.assertEquals(n.recv(),"dummy_socket_recv")
+
+    def test_zmqserver_sync(self):
+        import time
+        import gevent
+        from synapse.node import ZMQServer, ZMQClient, async, poller
+        conf_srv = {
+                'uri':'tcp://*:5555',
+                'name':'zmq_srv_sync',
+                }
+
+        conf_cli = {
+                'uri':'tcp://localhost:5555',
+                'name':'zmq_cli_sync',
+                }
+        
+        def sync_handler(msg):
+            return "sync_response"
+            
+        
+        server = ZMQServer(conf_srv,sync_handler)
+        self.assertTrue(server.socket is None)
+        server.start()
+        self.assertTrue(server.socket is not None)
+        self.assertRaises(NotImplementedError,server.send,"unimplemented")
+
+        server = gevent.spawn(server.loop)
+        
+        client = ZMQClient(conf_cli)
+        self.assertTrue(client.socket is None)
+        client.connect()
+        self.assertTrue(client.socket is not None)
+        client.send("message")
+        resonse = client.recv()
+        self.assertEquals(resonse,"sync_response")
+        gevent.kill(server)
+
+    def test_zmqserver_async(self):
+        import time
+        import gevent
+        from synapse.node import ZMQServer, ZMQClient, async, poller
+        conf_srv = {
+                'uri':'tcp://*:5557',
+                'name':'zmq_srv_async',
+                }
+
+        conf_cli = {
+                'uri':'tcp://localhost:5557',
+                'name':'zmq_cli_async',
+                }
+        @async
+        def sync_handler(msg):
+            return "async_response"
+            
+        
+        server = ZMQServer(conf_srv,sync_handler)
+        self.assertTrue(server.socket is None)
+        server.start()
+        self.assertTrue(server.socket is not None)
+        self.assertRaises(NotImplementedError,server.send,"unimplemented")
+
+        server = gevent.spawn(server.loop)
+        
+        client = ZMQClient(conf_cli)
+        self.assertTrue(client.socket is None)
+        client.connect()
+        self.assertTrue(client.socket is not None)
+        client.send("message")
+        resonse = client.recv()
+        self.assertEquals(resonse,"async_response")
+        gevent.kill(server)
+
+
+    def test_zmqserver_exc(self):
+        import time
+        import gevent
+        from synapse.node import ( ZMQServer, ZMQClient, NodeException,
+                                   async, poller )
+        conf_srv = {
+                'uri':'tcp://*:5556',
+                'name':'zmqsrv',
+                }
+
+        conf_cli = {
+                'uri':'tcp://localhost:5556',
+                'name':'zmqcli',
+                }
+        
+        def sync_handler(msg):
+            raise NodeException("buggy","exc_result")
+            #return "sync_response"
+            
+        
+        server = ZMQServer(conf_srv,sync_handler)
+        self.assertTrue(server.socket is None)
+        server.start()
+        self.assertTrue(server.socket is not None)
+        self.assertRaises(NotImplementedError,server.send,"unimplemented")
+
+        server = gevent.spawn(server.loop)
+        
+        client = ZMQClient(conf_cli)
+        self.assertTrue(client.socket is None)
+        client.connect()
+        self.assertTrue(client.socket is not None)
+        client.send("sync_message")
+        resonse = client.recv()
+        self.assertEquals(resonse,"exc_result")
+        gevent.kill(server)
+
+
+class TestFactory(TestCase):
+    
+    def test_makeNode(self):
+        from synapse.node import makeNode
+        
+
+    def test_makePoller(self):
+        from synapse.node import makePoller, EventPoller
+        
+        self.assertRaises(KeyError,makePoller,{"type":"not_implemented"})
+        poller = makePoller({"type": "zmq"})
+        self.assertTrue(isinstance(poller,EventPoller))
+        
