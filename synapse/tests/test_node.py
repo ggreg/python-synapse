@@ -182,9 +182,8 @@ class TestZMQ(TestCase):
         self.assertEquals(n.recv(),"dummy_socket_recv")
 
     def test_zmqserver_sync(self):
-        import time
         import gevent
-        from synapse.node import ZMQServer, ZMQClient, async, poller
+        from synapse.node import ZMQServer, ZMQClient
         conf_srv = {
                 'uri':'tcp://*:5555',
                 'name':'zmq_srv_sync',
@@ -195,11 +194,11 @@ class TestZMQ(TestCase):
                 'name':'zmq_cli_sync',
                 }
         
-        def sync_handler(msg):
+        def srv_handler(msg):
             return "sync_response"
             
         
-        server = ZMQServer(conf_srv,sync_handler)
+        server = ZMQServer(conf_srv,srv_handler)
         self.assertTrue(server.socket is None)
         server.start()
         self.assertTrue(server.socket is not None)
@@ -217,24 +216,23 @@ class TestZMQ(TestCase):
         gevent.kill(server)
 
     def test_zmqserver_async(self):
-        import time
         import gevent
-        from synapse.node import ZMQServer, ZMQClient, async, poller
+        from synapse.node import ZMQServer, ZMQClient, async
         conf_srv = {
-                'uri':'tcp://*:5557',
+                'uri':'tcp://*:5556',
                 'name':'zmq_srv_async',
                 }
 
         conf_cli = {
-                'uri':'tcp://localhost:5557',
+                'uri':'tcp://localhost:5556',
                 'name':'zmq_cli_async',
                 }
         @async
-        def sync_handler(msg):
+        def srv_handler(msg):
             return "async_response"
             
         
-        server = ZMQServer(conf_srv,sync_handler)
+        server = ZMQServer(conf_srv,srv_handler)
         self.assertTrue(server.socket is None)
         server.start()
         self.assertTrue(server.socket is not None)
@@ -253,26 +251,23 @@ class TestZMQ(TestCase):
 
 
     def test_zmqserver_exc(self):
-        import time
         import gevent
-        from synapse.node import ( ZMQServer, ZMQClient, NodeException,
-                                   async, poller )
+        from synapse.node import ZMQServer, ZMQClient, NodeException
         conf_srv = {
-                'uri':'tcp://*:5556',
+                'uri':'tcp://*:5557',
                 'name':'zmqsrv',
                 }
 
         conf_cli = {
-                'uri':'tcp://localhost:5556',
+                'uri':'tcp://localhost:5557',
                 'name':'zmqcli',
                 }
         
-        def sync_handler(msg):
+        def srv_handler(msg):
             raise NodeException("buggy","exc_result")
-            #return "sync_response"
             
         
-        server = ZMQServer(conf_srv,sync_handler)
+        server = ZMQServer(conf_srv,srv_handler)
         self.assertTrue(server.socket is None)
         server.start()
         self.assertTrue(server.socket is not None)
@@ -288,6 +283,40 @@ class TestZMQ(TestCase):
         resonse = client.recv()
         self.assertEquals(resonse,"exc_result")
         gevent.kill(server)
+        
+    def test_zmq_publish():
+        import gevent
+        from synapse.node import ZMQPublish, ZMQSubscribe
+        conf_srv = {
+                'uri':'tcp://*:5560',
+                'name':'zmq_srv_async',
+                }
+
+        conf_cli = {
+                'uri':'tcp://localhost:5560',
+                'name':'zmq_cli_async',
+                }
+        def srv_handler(msg):
+            return "async_response"
+            
+        
+        server = ZMQPublish(conf_srv,srv_handler)
+        self.assertTrue(server.socket is None)
+        server.start()
+        self.assertTrue(server.socket is not None)
+        self.assertRaises(NotImplementedError,server.send,"unimplemented")
+
+        server = gevent.spawn(server.loop)
+        
+        client = ZMQSubscribe(conf_cli)
+        self.assertTrue(client.socket is None)
+        client.connect()
+        self.assertTrue(client.socket is not None)
+        client.send("message")
+        resonse = client.recv()
+        self.assertEquals(resonse,"async_response")
+        gevent.kill(server)
+        
 
 
 class TestFactory(TestCase):
