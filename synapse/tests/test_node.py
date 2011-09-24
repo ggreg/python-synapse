@@ -4,6 +4,8 @@
 from unittest import TestCase
 
 from synapse.node import poller
+# default poller fail a few test
+#poller._loop_again = False
 
 class TestDecorators(TestCase):
 
@@ -69,6 +71,7 @@ class TestNode(TestCase):
         
         nd.add('test','ipc://./test.unix')
         self.assertTrue( 'test' in nd)
+
         
         node = nd['test']
         self.assertTrue(isinstance(node, ZMQClient))
@@ -106,6 +109,7 @@ class TestNode(TestCase):
 
 
     def test_poller(self):
+        import gevent
         from synapse.node import Poller, poller, PollerException
         p = Poller()
         self.assertRaises( NotImplementedError, p.loop )
@@ -123,7 +127,59 @@ class TestNode(TestCase):
         self.assertEquals( poller.timeout, 10 )
         poller.periodic_handler = handler
         self.assertEquals( poller.periodic_handler, handler )
+        self.assertRaises( PollerException, poller.set_periodic_handler, handler )
         # end test backward
+
+        self.assertEquals( repr(poller), '<EventPoller pid:%d>' % poller._pid )
+        
+        class TestPeriod(object):
+            
+            def __init__(self):
+                self.nb_run = 0
+            
+            def handle(self):
+                if self.nb_run >= 2:
+                    return False
+                self.nb_run+=1
+                return True
+        tp = TestPeriod()
+        poller.add_periodical_handler(tp.handle,0.1)
+        gevent.sleep(0.5)
+        self.assertEquals( tp.nb_run, 2)
+        
+        class DummyNode(object):
+            
+            def __init__(self):
+                self.nb_run = 0
+
+            def loop(self):
+                self.nb_run += 1
+        
+        node = DummyNode()
+        poller.register(node)
+        gevent.sleep(0.5)
+        self.assertEquals( node.nb_run, 1 )
+        
+        class Spawned(object):
+            def __init__(self):
+                self.nb_run = 0
+
+            def __call__(self):
+                self.nb_run += 1
+                
+        spawned = Spawned()
+        poller.spawn(spawned)
+        gevent.sleep(0.5)
+        self.assertEquals( spawned .nb_run, 1 )
+
+        
+        
+        @poller.__spawn_handler__
+        def buggy():
+            raise TypeError()
+            
+        self.assertRaises(TypeError,buggy)
+            
     
         
     def test_actor(self):
@@ -211,9 +267,13 @@ class TestZMQ(TestCase):
         client.connect()
         self.assertTrue(client.socket is not None)
         client.send("message")
+        
+        
         response = client.recv()
         self.assertEquals(response,"sync_response")
+        #gevent.sleep(1)
         gevent.kill(server)
+
 
     def test_zmqserver_async(self):
         import gevent
@@ -247,6 +307,7 @@ class TestZMQ(TestCase):
         client.send("message")
         response = client.recv()
         self.assertEquals(response,"async_response")
+        gevent.sleep(1)
         gevent.kill(server)
 
 
@@ -288,18 +349,24 @@ class TestZMQ(TestCase):
         import gevent
         from synapse.node import ZMQPublish, ZMQSubscribe
         conf_pub = {
-                'uri':'tcp://localhost:5560',
+                'uri':'tcp://127.0.0.1:5560',
                 'name':'zmq_pub',
                 }
 
         conf_sub = {
-                'uri':'tcp://localhost:5560',
+                'uri':'tcp://127.0.0.1:5560',
                 'name':'zmq_sub',
                 }
         
-        def sub_handler(msg):
-            return "sub_treat"
-            
+        class Hdl:
+            def __init__(self):
+                self.msg = None
+                
+            def sub_handler(self,msg):
+                hdl.msg = msg
+        
+        hdl = Hdl()
+        
         pub = ZMQPublish(conf_pub)
         self.assertTrue(pub.socket is None)
         pub.start()
@@ -310,17 +377,19 @@ class TestZMQ(TestCase):
 
 
 
-        sub = ZMQSubscribe(conf_sub,sub_handler)
+        sub = ZMQSubscribe(conf_sub,hdl.sub_handler)
         self.assertTrue(sub.socket is None)
         sub.connect()
         self.assertTrue(sub.socket is not None)
         
-        self.assertRaises(NotImplementedError,sub.send)
+        self.assertRaises(NotImplementedError,sub.send,"")
 
-
+        subglet = gevent.spawn(sub.loop)
+        gevent.sleep(1)
         pub.send("puslished_message")
-        response = sub.recv()
-        self.assertEquals(response,"async_response")
+        gevent.sleep(1)
+        self.assertEquals(hdl.msg,"puslished_message")
+        subglet.kill()
 
         
 

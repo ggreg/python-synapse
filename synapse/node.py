@@ -765,8 +765,10 @@ class EventPoller(Poller):
         to catch exceptions to log them, and re-raise the exception
 
         """
-        from functools import wraps
-        @wraps(handler)
+        # You can's use wraps for callable class (__call__)
+        # furthermore keep signature of the method looks not usefull
+        #from functools import wraps
+        #@wraps(handler)
         def method(*args, **kwargs):
             """Catch exceptions and log them"""
             try:
@@ -891,6 +893,7 @@ class ZMQPublish(ZMQNode):
     """
     def start(self):
         self._socket = _context.socket(zmq.PUB)
+        self._socket.bind(self._uri)
 
 
     def recv(self):
@@ -913,7 +916,7 @@ class ZMQSubscribe(ZMQNode):
 
     def connect(self):
         self._socket = _context.socket(zmq.SUB)
-        self._socket.bind(self._uri)
+        #self._socket.bind(self._uri)
         self._socket.connect(self._uri)
         self._socket.setsockopt(zmq.SUBSCRIBE, '')
 
