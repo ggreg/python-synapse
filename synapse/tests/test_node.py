@@ -211,8 +211,8 @@ class TestZMQ(TestCase):
         client.connect()
         self.assertTrue(client.socket is not None)
         client.send("message")
-        resonse = client.recv()
-        self.assertEquals(resonse,"sync_response")
+        response = client.recv()
+        self.assertEquals(response,"sync_response")
         gevent.kill(server)
 
     def test_zmqserver_async(self):
@@ -245,8 +245,8 @@ class TestZMQ(TestCase):
         client.connect()
         self.assertTrue(client.socket is not None)
         client.send("message")
-        resonse = client.recv()
-        self.assertEquals(resonse,"async_response")
+        response = client.recv()
+        self.assertEquals(response,"async_response")
         gevent.kill(server)
 
 
@@ -280,42 +280,48 @@ class TestZMQ(TestCase):
         client.connect()
         self.assertTrue(client.socket is not None)
         client.send("sync_message")
-        resonse = client.recv()
-        self.assertEquals(resonse,"exc_result")
+        response = client.recv()
+        self.assertEquals(response,"exc_result")
         gevent.kill(server)
         
-    def test_zmq_publish():
+    def test_zmq_publish(self):
         import gevent
         from synapse.node import ZMQPublish, ZMQSubscribe
-        conf_srv = {
-                'uri':'tcp://*:5560',
-                'name':'zmq_srv_async',
-                }
-
-        conf_cli = {
+        conf_pub = {
                 'uri':'tcp://localhost:5560',
-                'name':'zmq_cli_async',
+                'name':'zmq_pub',
                 }
-        def srv_handler(msg):
-            return "async_response"
-            
-        
-        server = ZMQPublish(conf_srv,srv_handler)
-        self.assertTrue(server.socket is None)
-        server.start()
-        self.assertTrue(server.socket is not None)
-        self.assertRaises(NotImplementedError,server.send,"unimplemented")
 
-        server = gevent.spawn(server.loop)
+        conf_sub = {
+                'uri':'tcp://localhost:5560',
+                'name':'zmq_sub',
+                }
         
-        client = ZMQSubscribe(conf_cli)
-        self.assertTrue(client.socket is None)
-        client.connect()
-        self.assertTrue(client.socket is not None)
-        client.send("message")
-        resonse = client.recv()
-        self.assertEquals(resonse,"async_response")
-        gevent.kill(server)
+        def sub_handler(msg):
+            return "sub_treat"
+            
+        pub = ZMQPublish(conf_pub)
+        self.assertTrue(pub.socket is None)
+        pub.start()
+        pub.send("puslished_message")
+        
+        self.assertTrue(pub.socket is not None)
+        self.assertRaises(NotImplementedError,pub.recv)
+
+
+
+        sub = ZMQSubscribe(conf_sub,sub_handler)
+        self.assertTrue(sub.socket is None)
+        sub.connect()
+        self.assertTrue(sub.socket is not None)
+        
+        self.assertRaises(NotImplementedError,sub.send)
+
+
+        pub.send("puslished_message")
+        response = sub.recv()
+        self.assertEquals(response,"async_response")
+
         
 
 
