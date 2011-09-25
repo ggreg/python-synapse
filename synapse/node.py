@@ -73,13 +73,13 @@ import gevent.queue
 import gevent.coros
 from gevent_zeromq import zmq
 
-from synapse.message import makeMessage, makeCodec, \
-                            HelloMessage, ByeMessage, \
-                            WhereIsMessage, IsAtMessage, \
-                            UnknownNodeMessage, AckMessage, \
-                            NackMessage, MessageException, \
-                            MessageInvalidException, \
-                            CodecException
+from synapse.message import ( makeMessage, makeCodec,
+                            HelloMessage, ByeMessage,
+                            WhereIsMessage, IsAtMessage,
+                            UnknownNodeMessage, AckMessage,
+                            NackMessage, MessageException,
+                            MessageInvalidException,
+                            CodecException )
 
 
 
@@ -216,14 +216,12 @@ class NodeDirectory(object):
         return self._nodes[name]
 
 
-    def remove(self, name, uri=None):
+    def remove(self, name):
         """
         remove a node from the direcory
         Arguments:
             :name name: name of the node to remove
             :name type: str
-            :name uri: unused param, keep for compatibility
-            :name uri: str
             :return: None
             :raises KeyError: if the node is not register is the directory
         """
@@ -442,24 +440,19 @@ class Actor(object):
             return self._codec.dumps(reply)
 
 
-    def on_message_hello(self, msg):
+    def on_message_hello(self,actor, msg):
         if msg.uri == self._uri or not self._uri:
             return
-        try:
-            self._nodes.add(msg.src, msg.uri)
-        except Exception, err:
-            self._log.error('cannot add node %s with uri "%s": "%s"' % \
-                          (msg.src, msg.uri, str(err)))
-
-
-    def on_message_is_at(self, msg):
         self._nodes.add(msg.src, msg.uri)
 
 
-    def on_message_bye(self, msg):
-        if msg.uri == self._uri:
+    def on_message_is_at(self,actor, msg):
+        self._nodes.add(msg.name, msg.uri)
+
+    def on_message_bye(self, actor, msg):
+        if msg.src == self.name:
             return
-        self._nodes.remove(msg.src, msg.uri)
+        self._nodes.remove(msg.src)
 
 
 
@@ -510,7 +503,7 @@ class AnnounceServer(object):
             self._nodes.add(msg.src, msg.uri)
             reply = AckMessage(self._server.name)
         if msg.type == 'bye':
-            self._nodes.remove(msg.src, msg.uri)
+            self._nodes.remove(msg.src)
             reply = AckMessage(self._server.name)
         if msg.type == 'where_is':
             if msg.name not in self._nodes:
@@ -607,9 +600,15 @@ class AnnounceClient(object):
 
 
     def handle_announce(self, socket, events):
+        """
+        FIXME: 
+            - undocumented funtion 
+            - neither socket nor events is used
+            - msgstring is undefined
+        
         request = self._codec.loads(msgstring)
         self._handler(request)
-
+        """
 
 
 class Poller(object):
@@ -693,7 +692,7 @@ class EventPoller(Poller):
         """Call the `handler` each `timeout` seconds.
         This method is called in a dedicated greenlet.
 
-        :Parameters:
+            :Parameters:
           handler : callable
             the callable to call each period
           timeout : integer
