@@ -3,7 +3,7 @@
 
 from unittest import TestCase
 
-class TestJSONEncoder(TestCase):
+class JSONEncoderTestCase(TestCase):
     def _test_json_datetime(self, date):
         import json
         from synapse import message
@@ -44,7 +44,6 @@ class TestJSONEncoder(TestCase):
         self.assertRaises(TypeError,codec.default,1.)
 
 
-
     def test_json_xmlrpclib_datetime(self):
         import xmlrpclib
         import json
@@ -67,7 +66,7 @@ class TestJSONEncoder(TestCase):
 
 
 
-class TestMessage(TestCase):
+class MessageTestCase(TestCase):
     
     
     def test_makeCodec(self):
