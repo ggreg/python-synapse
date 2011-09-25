@@ -7,7 +7,7 @@ from synapse.node import poller
 # default poller fail a few test
 #poller._loop_again = False
 
-class TestDecorators(TestCase):
+class DecoratorTestCase(TestCase):
 
     def test_async(self):
         from synapse.node import async
@@ -49,8 +49,21 @@ class TestDecorators(TestCase):
         except NodeException, e:
             self.assertEquals(str(e), "dummy message")
 
+    
+    def test_mixin(self):
+        """
+        FIXME: unused function: remove it ?
+        """
+        from synapse.node import mixIn
+        
+        class A(object):pass
+        class B: pass
+        
+        mixIn(A,B)
+        self.assertTrue(isinstance(A(),B))
 
-class TestNode(TestCase):
+
+class NodeTestCase(TestCase):
 
     def test_node(self):
         from synapse.node import Node
@@ -76,7 +89,7 @@ class TestNode(TestCase):
         node = nd['test']
         self.assertTrue(isinstance(node, ZMQClient))
 
-        nd.remove('test','FIXME: unused_param')
+        nd.remove('test')
         self.assertFalse( 'test' in nd)
 
         self.assertRaises(KeyError,nd.remove,'test')
@@ -107,6 +120,359 @@ class TestNode(TestCase):
 
         
 
+class ActorTestCase(TestCase):
+    
+    def test_actor(self):
+        import gevent
+        from synapse.message import Message
+        from synapse.node import AnnounceServer, Actor 
+        
+        class DummyMessage(Message):
+            type = 'dummy'
+            def __init__(self,msg,id=None):
+                Message.__init__(self, id)
+                self.msg = msg
+                
+            @property
+            def attrs(self):
+                return {'msg':self.msg}
+
+        srv_config = {
+            'type': 'zmq',
+            'codec': 'jsonrpc',
+            'name': 'test_actor_announcer',
+            'announce' : {
+                      'server_uri':'ipc://./test_actor_srv.unix',
+                      'pubsub_uri':'ipc://./test_actor_pub.unix'
+                      }
+            }
+        srv = AnnounceServer(srv_config)
+        srv.start()
+
+        actor_config1 = srv_config.copy()
+        actor_config1.update({
+                        'name': 'actor1',
+                        'uri': 'ipc://./test_actor_1.unix'
+                      })
+        actor_config2 = srv_config.copy()
+        actor_config2.update({
+                        'name': 'actor2',
+                        'uri': 'ipc://./test_actor_2.unix'
+                      })
+        
+        class Handler(object):
+
+            def __init__(self):
+                self.withresponse_actor = None
+                self.withresponse_msg = None
+                self.noresponse_actor = None
+                self.noresponse_msg = None
+                
+            def handler_withresponse(self,actor,msg):
+                self.withresponse_actor = actor
+                self.withresponse_msg = msg
+                return DummyMessage("actor1 to actor2 response")
+            
+            def handler_noresponse(self,actor,msg):
+                self.noresponse_actor = actor
+                self.noresponse_msg = msg
+                #will return an ack
+
+        
+            def on_recv(self,**kwargs):
+                print "*" * 80
+                print kwargs
+                print "*" * 80
+            
+        hdl = Handler()
+        
+        actor1 = Actor(actor_config1, hdl.handler_withresponse )
+        self.assertEquals(actor1.name, 'actor1')
+        actor1.connect()
+        
+        actor2 = Actor(actor_config2, hdl.handler_noresponse)
+        actor2.connect()
+        
+        dummy = DummyMessage('actor1 to actor2 request')
+        response = actor1.sendrecv('actor2', dummy)
+        self.assertEquals(response.type,'ack')
+        self.assertEquals(hdl.noresponse_msg.msg,'actor1 to actor2 request')
+        self.assertEquals(hdl.noresponse_actor.name,'actor2')
+        
+
+        dummy = DummyMessage('actor2 to actor1 request')
+        response = actor2.sendrecv('actor1', dummy, hdl.on_recv)
+        self.assertEquals(response.msg,"actor1 to actor2 response")
+        self.assertEquals(response.type,'dummy')
+
+        self.assertEquals(hdl.withresponse_actor.name,'actor1')
+        self.assertEquals(hdl.withresponse_msg.msg,'actor2 to actor1 request')
+        
+        self.assertEquals(len(srv._nodes._nodes),2)
+        actor1.__del__()
+        actor2.__del__()
+        self.assertEquals(len(srv._nodes._nodes),0)
+
+    def test_actor_async(self):
+        import gevent
+        from synapse.message import Message
+        from synapse.node import AnnounceServer, Actor , async
+        
+        class DummyMessage(Message):
+            type = 'dummy'
+            def __init__(self,msg,id=None):
+                Message.__init__(self, id)
+                self.msg = msg
+                
+            @property
+            def attrs(self):
+                return {'msg':self.msg}
+
+        srv_config = {
+            'type': 'zmq',
+            'codec': 'jsonrpc',
+            'name': 'test_actor_announcer',
+            'announce' : {
+                      'server_uri':'ipc://./test_asyncactor_srv.unix',
+                      'pubsub_uri':'ipc://./test_asyncactor_pub.unix'
+                      }
+            }
+        srv = AnnounceServer(srv_config)
+        srv.start()
+
+        actor_config1 = srv_config.copy()
+        actor_config1.update({
+                        'name': 'actor1',
+                        'uri': 'ipc://./test_asyncactor_1.unix'
+                      })
+        actor_config2 = srv_config.copy()
+        actor_config2.update({
+                        'name': 'actor2',
+                        'uri': 'ipc://./test_asyncactor_2.unix'
+                      })
+
+        
+        class Handler(object):
+
+            def __init__(self):
+                self.withresponse_actor = None
+                self.withresponse_msg = None
+            
+        hdl = Handler()
+
+        @async
+        def handler_withresponse(actor,msg):
+            hdl.withresponse_actor = actor
+            hdl.withresponse_msg = msg
+            return DummyMessage("actor1 to actor2 response")
+        
+        
+        actor1 = Actor(actor_config1, handler_withresponse )
+        actor1.connect()
+        
+        actor2 = Actor(actor_config2, handler_withresponse)
+        actor2.connect()
+
+        # asyn method always return an ack
+        dummy = DummyMessage('actor1 to actor2 request')
+        response = actor1.sendrecv('actor2', dummy)
+        self.assertEquals(response.type,'ack')
+        self.assertEquals(hdl.withresponse_actor.name,'actor2')
+
+        self.assertEquals(len(srv._nodes._nodes),2)
+        actor1.__del__()
+        actor2.__del__()
+        self.assertEquals(len(srv._nodes._nodes),0)
+
+
+    def test_actor_class(self):
+        import gevent
+        from synapse.message import Message, MessageCodecJSONRPC, CodecException
+        from synapse.node import ( AnnounceServer, Actor, 
+                                  HelloMessage, IsAtMessage, ByeMessage )
+        
+        class DummyMessage(Message):
+            type = 'dummy'
+            def __init__(self,msg,id=None):
+                Message.__init__(self, id)
+                self.msg = msg
+                
+            @property
+            def attrs(self):
+                return {'msg':self.msg}
+
+        class BuggyMessage(Message):
+            type = 'buggy'
+            @property
+            def attrs(self):
+                return {}
+
+        class UnmanagedMessage(Message):
+            type = 'unmanaged'
+            @property
+            def attrs(self):
+                return {}
+
+        class BuggyMessageCodec(MessageCodecJSONRPC):
+
+            def loads(self, msgstring):
+                raise CodecException("loads_bug")
+
+
+
+        srv_config = {
+            'type': 'zmq',
+            'codec': 'jsonrpc',
+            'name': 'test_actor_announcer',
+            'announce' : {
+                      'server_uri':'ipc://./test_actor_srv.unix',
+                      'pubsub_uri':'ipc://./test_actor_pub.unix'
+                      }
+            }
+        srv = AnnounceServer(srv_config)
+        srv.start()
+
+        actor_config1 = srv_config.copy()
+        actor_config1.update({
+                        'name': 'actor1',
+                        'uri': 'ipc://./test_actor_1.unix'
+                      })
+        
+        actor_config2 = srv_config.copy()
+        actor_config2.update({
+                        'name': 'actor2',
+                        'uri': 'ipc://./test_actor_2.unix'
+                      })
+        
+        class DummyActor(Actor):
+
+            def __init__(self,config):
+                Actor.__init__(self,config)
+                self.withresponse_actor = None
+                self.withresponse_msg = None
+                
+            def on_message_dummy(self,actor,msg):
+                self.withresponse_actor = actor
+                self.withresponse_msg = msg
+                return DummyMessage("actor1 to actor2 response")
+
+            def on_message_buggy(self,actor,msg):
+                raise Exception("raised")
+        
+        actor1 = DummyActor(actor_config1)
+        self.assertEquals(actor1.name, 'actor1')
+        actor1.connect()
+        
+        actor2 = DummyActor(actor_config2)
+        actor2.connect()
+
+        dummy = DummyMessage('actor1 to actor2 request')
+        response = actor1.sendrecv('actor2', dummy)
+        self.assertEquals(response.type,'dummy')
+        self.assertEquals(response.msg,'actor1 to actor2 response')
+        self.assertEquals(actor2.withresponse_msg.msg,'actor1 to actor2 request')
+        self.assertEquals(actor2.withresponse_actor.name,'actor2')
+
+        self.assertRaises(ValueError, actor1.sendrecv,'actorundefined', dummy)
+
+        response = actor1.sendrecv('actor1', 
+                                   BuggyMessage())
+        self.assertEquals(response.type,'nack')
+        self.assertEquals(response.msg,'raised')
+        
+
+        response = actor1.sendrecv('actor1', 
+                                   UnmanagedMessage())
+        self.assertEquals(response.type,'nack')
+        
+        
+        response = actor1.sendrecv('actor1', 
+                                   HelloMessage(actor1.name,actor1._uri))
+        self.assertEquals(response.type,'ack')
+        response = actor1.sendrecv('actor2', 
+                                   HelloMessage(actor1.name,actor1._uri))
+        self.assertEquals(response.type,'ack')
+
+        response = actor1.sendrecv('actor2', 
+                                   IsAtMessage(actor1.name,actor1._uri))
+        self.assertEquals(response.type,'ack')
+        
+
+        response = actor1.sendrecv('actor1', ByeMessage("actor1"))
+        self.assertEquals(response.type,'ack')
+
+        response = actor1.sendrecv('actor1', ByeMessage("actor2"))
+        self.assertEquals(response.type,'ack')
+
+        oldcodec = actor2._codec 
+        actor2._codec = BuggyMessageCodec(None)
+        response = actor1.sendrecv('actor2', dummy)
+        self.assertEquals(response.type,'nack')
+        actor2._codec = oldcodec 
+        
+        self.assertEquals(len(srv._nodes._nodes),2)
+        actor1.__del__()
+        actor2.__del__()
+        self.assertEquals(len(srv._nodes._nodes),0)
+
+
+class AnnouncerTestCase(TestCase):
+
+    def test_announce(self):
+        from synapse.node import AnnounceServer, AnnounceClient
+            
+        srv_config = {
+            'type': 'zmq',
+            'codec': 'jsonrpc',
+            'name': 'test_announcer',
+            'announce' : {
+                      'server_uri':'ipc://./test_announcer_srv.unix',
+                      'pubsub_uri':'ipc://./test_announcer_pub.unix'
+                      }
+            }
+        srv = AnnounceServer(srv_config)
+        srv.start()
+        
+        cli_config1 = srv_config.copy()
+        cli_config1.update({
+                        'name': 'cli1',
+                        'uri': 'ipc://./test_announcer_cli1.unix'
+                      })
+        cli_config2 = srv_config.copy()
+        cli_config2.update({
+                        'name': 'cli2',
+                        'uri': 'ipc://./test_announcer_cli2.unix'
+                      })
+        
+        def announce_handler(msg): pass
+        
+        cli1 = AnnounceClient(cli_config1, announce_handler)
+        self.assertEquals(len(cli1.nodes),2) # client + subscriber
+        cli1.connect()
+
+        cli2 = AnnounceClient(cli_config2, announce_handler)
+        cli2.connect()
+        
+        ack = cli1.hello(cli2._client)
+        self.assertEquals(ack.type,'ack')
+        self.assertEquals(ack.src,'announce.server')
+        
+        ack = cli1.where_is('cli2.announce')
+        self.assertEquals(ack.type,'is_at')
+        self.assertEquals(ack.uri,srv_config['announce']['server_uri'])
+
+        ack = cli1.where_is('unknown_node.announce')
+        self.assertEquals(ack.type,'unknown_node')
+
+        ack = cli1.bye(cli2._client)
+        self.assertEquals(ack.type,'ack')
+        self.assertEquals(ack.src,'announce.server')
+        
+        
+        
+
+
+class PollerTestCase(TestCase):
 
     def test_poller(self):
         import gevent
@@ -201,36 +567,9 @@ class TestNode(TestCase):
         self.assertEquals(dp.nb_run,1)
         
         
-        
-    def test_actor(self):
-        config1 = {
-            'type': 'zmq',
-            'codec': 'jsonrpc',
-            'name': 'test1',
-            'uri': 'ipc://./test1.unix'
-            }
-        config2 = {
-            'type': 'zmq',
-            'codec': 'jsonrpc',
-            'name': 'test2',
-            'uri': 'ipc://./test2.unix'
-            }
-    
-    
-    def test_mixin(self):
-        """
-        FIXME: unused function: remove it ?
-        """
-        from synapse.node import mixIn
-        
-        class A(object):pass
-        class B: pass
-        
-        mixIn(A,B)
-        self.assertTrue(isinstance(A(),B))
 
 
-class TestZMQ(TestCase):
+class ZMQTestCase(TestCase):
     
     def test_zmqnode(self):
         from synapse.node import ZMQNode
@@ -414,7 +753,7 @@ class TestZMQ(TestCase):
         
 
 
-class TestFactory(TestCase):
+class FactoryTestCase(TestCase):
     
     def test_makeNode(self):
         from synapse.node import makeNode
