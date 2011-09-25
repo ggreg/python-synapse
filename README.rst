@@ -20,3 +20,39 @@ and decode messages.
 Read doc/quickstart for a practical introduction. As documentation in doc/ is
 in Sphinx format, type ``make`` in the directory to see how to build it in HTML
 or PDF.
+
+
+Tests
+=====
+
+.. highlight bash
+
+launch all the tests::
+
+    $ python setup.py test
+
+Test a specific feature:
+
+- Message
+
+    $ python setup.py -s synapses.tests.test_message
+    
+- All Node features
+
+    $ python setup.py -s synapses.tests.test_node
+
+- Node zmq tests
+
+    $ python setup.py -s synapses.tests.test_node.ZMQTestCase
+    
+
+
+
+| To test the code coverage
+| ( you need nose, use last version from http://pypi.python.org/pypi/nose )
+::
+
+    $ python setup.py nosetests
+
+
+
