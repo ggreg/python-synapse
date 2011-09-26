@@ -506,6 +506,14 @@ class AnnounceServer(object):
     def stop(self):
         self._publisher.stop()
         self._server.stop()
+        
+
+    def __enter__(self):
+        self.start()
+        return self
+    
+    def __exit__(self, type, value, traceback):
+        self.stop()
 
     def handle_message(self, msgstring):
         msg = self._codec.loads(msgstring)
