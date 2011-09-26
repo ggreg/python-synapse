@@ -176,13 +176,7 @@ class ActorTestCase(TestCase):
             def handler_noresponse(self,actor,msg):
                 self.noresponse_actor = actor
                 self.noresponse_msg = msg
-                #will return an ack
-
-        
-            def on_recv(self,**kwargs):
-                print "*" * 80
-                print kwargs
-                print "*" * 80
+                #will return an ack if None return here
             
         hdl = Handler()
         
@@ -201,7 +195,7 @@ class ActorTestCase(TestCase):
         
 
         dummy = DummyMessage('actor2 to actor1 request')
-        response = actor2.sendrecv('actor1', dummy, hdl.on_recv)
+        response = actor2.sendrecv('actor1', dummy)
         self.assertEquals(response.msg,"actor1 to actor2 response")
         self.assertEquals(response.type,'dummy')
 
@@ -257,6 +251,7 @@ class ActorTestCase(TestCase):
             def __init__(self):
                 self.withresponse_actor = None
                 self.withresponse_msg = None
+                self.async_response = None
             
         hdl = Handler()
 
@@ -265,7 +260,11 @@ class ActorTestCase(TestCase):
             hdl.withresponse_actor = actor
             hdl.withresponse_msg = msg
             return DummyMessage("actor1 to actor2 response")
-        
+
+
+        def on_recv(msg):
+            hdl.async_response = msg.msg
+       
         
         actor1 = Actor(actor_config1, handler_withresponse )
         actor1.connect()
@@ -275,17 +274,24 @@ class ActorTestCase(TestCase):
 
         # asyn method always return an ack
         dummy = DummyMessage('actor1 to actor2 request')
-        response = actor1.sendrecv('actor2', dummy)
+        response = actor1.sendrecv('actor2', dummy, on_recv)
         self.assertEquals(response.type,'ack')
         self.assertEquals(hdl.withresponse_actor.name,'actor2')
 
+        actor2.sendrecv('actor1',DummyMessage('actor2 async response',dummy.id))
+        #gevent.sleep(0.) # force run in the next eventloop cycle
+        gevent.sleep(1)
+
+        self.assertEquals(hdl.async_response,'actor2 async response')
+        self.assertEquals(len(actor1._pendings), 0)
+        
         self.assertEquals(len(srv._nodes._nodes),2)
         actor1.__del__()
         actor2.__del__()
         self.assertEquals(len(srv._nodes._nodes),0)
 
 
-    def test_actor_class(self):
+    def test_actor_classstyle(self):
         import gevent
         from synapse.message import Message, MessageCodecJSONRPC, CodecException
         from synapse.node import ( AnnounceServer, Actor, 
@@ -358,6 +364,7 @@ class ActorTestCase(TestCase):
 
             def on_message_buggy(self,actor,msg):
                 raise Exception("raised")
+
         
         actor1 = DummyActor(actor_config1)
         self.assertEquals(actor1.name, 'actor1')
@@ -630,7 +637,6 @@ class ZMQTestCase(TestCase):
         
         response = client.recv()
         self.assertEquals(response,"sync_response")
-        #gevent.sleep(1)
         gevent.kill(server)
 
 
