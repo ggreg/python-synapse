@@ -288,7 +288,7 @@ class Actor(object):
         :class:`Actor` object is destroyed.
 
         """
-        self._announce.bye(self)
+        self.close()
 
 
     @property
@@ -304,15 +304,22 @@ class Actor(object):
 
         """
         self._mailbox.start()
-        poller.register(self._mailbox)
+        self._greenlet = poller.register(self._mailbox)
 
         self._announce.connect()
-        poller.register(self._announce._client)
-        poller.register(self._announce._subscriber)
+        # client do not need to be registred
+        #poller.register(self._announce._client)
+        self._greenlet_ann_sub = poller.register(self._announce._subscriber)
         self._announce.hello(self._mailbox)
 
         self._log.debug('connected')
 
+    def close(self):
+        self._announce.bye(self)
+        self._announce.close()
+        self._mailbox.stop()
+        [gevent.kill(g) for g in ( self._greenlet, self._greenlet_ann_sub) if g]
+                      
 
     def will_handle(self, msgid, incoming_msg, func):
         """Wait on the *incoming_msg* queue. Defers the message handling.
@@ -495,7 +502,10 @@ class AnnounceServer(object):
         self._publisher.start()
         self._server.start()
         poller.register(self._server)
-
+    
+    def stop(self):
+        self._publisher.stop()
+        self._server.stop()
 
     def handle_message(self, msgstring):
         msg = self._codec.loads(msgstring)
@@ -572,6 +582,12 @@ class AnnounceClient(object):
         self._client.connect()
 
 
+    def close(self):
+        if self._subscriber:
+            self._subscriber.close()
+        self._client.close()
+
+
     def send_to(self, dst, msg):
         self._log.debug('message %s#%d' % (msg.type, msg.id))
         return dst.send(self._codec.dumps(msg))
@@ -631,8 +647,6 @@ class Poller(object):
 
         """
         raise NotImplementedError()
-
-
 
 
 
@@ -721,7 +735,8 @@ class EventPoller(Poller):
         """
         if getattr(node, 'loop', None):
             greenlet = self.spawn(node.loop)
-
+            return greenlet
+        
     def spawn(self, handler, *args, **kwargs):
         """Spawn a new greenlet, and link it to the current greenlet when an
         exception is raise. This will cause to make the current process to stop
@@ -816,7 +831,8 @@ class ZMQNode(Node):
 
 
     def send(self, msg):
-        """Send a message
+        """
+        Send a message
         :param  dst: object that contains a send() socket interface
         :param  msg: serializable string
 
@@ -825,8 +841,7 @@ class ZMQNode(Node):
         ret = self._socket.send(msg)
         self._lock.release()
         return ret
-
-
+        
     def recv(self):
         """
         Return a message as a string from the receiving queue.
@@ -850,6 +865,7 @@ class ZMQNode(Node):
 
 
 class ZMQServer(ZMQNode):
+    
     def __init__(self, config, handler):
         ZMQNode.__init__(self, config)
         self._handler = handler
@@ -875,14 +891,20 @@ class ZMQServer(ZMQNode):
     def send(self, msg):
         raise NotImplementedError()
 
+    def stop(self):
+        self._socket.close()
 
 
 class ZMQClient(ZMQNode):
+    
     def connect(self):
         self._socket = _context.socket(zmq.REQ)
         self._socket.connect(self._uri)
-        poller.register(self)
-
+        # client side do not need to be registred, they are not looping
+        #poller.register(self)
+        
+    def close(self):
+        self._socket.close()
 
 class ZMQPublish(ZMQNode):
     """Prove the publish side of a PUB/SUB topology.
@@ -899,6 +921,8 @@ class ZMQPublish(ZMQNode):
     def recv(self):
         raise NotImplementedError()
 
+    def stop(self):
+        self._socket.close()
 
 
 class ZMQSubscribe(ZMQNode):
@@ -931,6 +955,8 @@ class ZMQSubscribe(ZMQNode):
     def send(self, msg):
         raise NotImplementedError()
 
+    def close(self):
+        self._socket.close()
 
 # factories function
 

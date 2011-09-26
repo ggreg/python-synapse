@@ -204,8 +204,9 @@ class ActorTestCase(TestCase):
         
         self.assertEquals(len(srv._nodes._nodes),2)
         actor1.__del__()
-        actor2.__del__()
+        actor2.close()
         self.assertEquals(len(srv._nodes._nodes),0)
+        srv.stop()
 
     def test_actor_async(self):
         import gevent
@@ -286,9 +287,10 @@ class ActorTestCase(TestCase):
         self.assertEquals(len(actor1._pendings), 0)
         
         self.assertEquals(len(srv._nodes._nodes),2)
-        actor1.__del__()
-        actor2.__del__()
+        actor1.close()
+        actor2.close()
         self.assertEquals(len(srv._nodes._nodes),0)
+        srv.stop()
 
 
     def test_actor_classstyle(self):
@@ -418,9 +420,10 @@ class ActorTestCase(TestCase):
         actor2._codec = oldcodec 
         
         self.assertEquals(len(srv._nodes._nodes),2)
-        actor1.__del__()
-        actor2.__del__()
+        actor1.close()
+        actor2.close()
         self.assertEquals(len(srv._nodes._nodes),0)
+        srv.stop()
 
 
 class AnnouncerTestCase(TestCase):
@@ -475,8 +478,7 @@ class AnnouncerTestCase(TestCase):
         self.assertEquals(ack.type,'ack')
         self.assertEquals(ack.src,'announce.server')
         
-        
-        
+        srv.stop()
 
 
 class PollerTestCase(TestCase):
@@ -626,7 +628,7 @@ class ZMQTestCase(TestCase):
         self.assertTrue(server.socket is not None)
         self.assertRaises(NotImplementedError,server.send,"unimplemented")
 
-        server = gevent.spawn(server.loop)
+        serverlet = gevent.spawn(server.loop)
         
         client = ZMQClient(conf_cli)
         self.assertTrue(client.socket is None)
@@ -634,10 +636,11 @@ class ZMQTestCase(TestCase):
         self.assertTrue(client.socket is not None)
         client.send("message")
         
-        
         response = client.recv()
         self.assertEquals(response,"sync_response")
-        gevent.kill(server)
+        gevent.kill(serverlet)
+        client.close()
+        server.stop()
 
 
     def test_zmqserver_async(self):
@@ -663,7 +666,7 @@ class ZMQTestCase(TestCase):
         self.assertTrue(server.socket is not None)
         self.assertRaises(NotImplementedError,server.send,"unimplemented")
 
-        server = gevent.spawn(server.loop)
+        serverlet = gevent.spawn(server.loop)
         
         client = ZMQClient(conf_cli)
         self.assertTrue(client.socket is None)
@@ -673,7 +676,9 @@ class ZMQTestCase(TestCase):
         response = client.recv()
         self.assertEquals(response,"async_response")
         gevent.sleep(1)
-        gevent.kill(server)
+        gevent.kill(serverlet)
+        client.close()
+        server.stop()
 
 
     def test_zmqserver_exc(self):
@@ -699,7 +704,7 @@ class ZMQTestCase(TestCase):
         self.assertTrue(server.socket is not None)
         self.assertRaises(NotImplementedError,server.send,"unimplemented")
 
-        server = gevent.spawn(server.loop)
+        serverlet = gevent.spawn(server.loop)
         
         client = ZMQClient(conf_cli)
         self.assertTrue(client.socket is None)
@@ -708,7 +713,9 @@ class ZMQTestCase(TestCase):
         client.send("sync_message")
         response = client.recv()
         self.assertEquals(response,"exc_result")
-        gevent.kill(server)
+        gevent.kill(serverlet)
+        client.close()
+        server.stop()
         
     def test_zmq_publish(self):
         import gevent
@@ -756,6 +763,8 @@ class ZMQTestCase(TestCase):
         self.assertEquals(hdl.msg,"puslished_message")
         subglet.kill()
 
+        pub.stop()
+        sub.close()
         
 
 
