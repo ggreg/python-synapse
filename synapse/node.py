@@ -291,6 +291,15 @@ class Actor(object):
         self.close()
 
 
+    def __enter__(self):
+        self.connect()
+        return self
+    
+    
+    def __exit__(self, type, value, traceback):
+        self.close()
+
+
     @property
     def name(self):
         return self._name
@@ -507,7 +516,6 @@ class AnnounceServer(object):
         self._publisher.stop()
         self._server.stop()
         
-
     def __enter__(self):
         self.start()
         return self

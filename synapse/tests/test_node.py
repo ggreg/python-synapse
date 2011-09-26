@@ -367,60 +367,57 @@ class ActorTestCase(TestCase):
                     raise Exception("raised")
 
             
-            actor1 = DummyActor(actor_config1)
-            self.assertEquals(actor1.name, 'actor1')
-            actor1.connect()
+            with DummyActor(actor_config1) as actor1:
+                self.assertEquals(actor1.name, 'actor1')
             
-            actor2 = DummyActor(actor_config2)
-            actor2.connect()
+                with DummyActor(actor_config2) as actor2:
+                
+                    dummy = DummyMessage('actor1 to actor2 request')
+                    response = actor1.sendrecv('actor2', dummy)
+                    self.assertEquals(response.type,'dummy')
+                    self.assertEquals(response.msg,'actor1 to actor2 response')
+                    self.assertEquals(actor2.withresponse_msg.msg,'actor1 to actor2 request')
+                    self.assertEquals(actor2.withresponse_actor.name,'actor2')
 
-            dummy = DummyMessage('actor1 to actor2 request')
-            response = actor1.sendrecv('actor2', dummy)
-            self.assertEquals(response.type,'dummy')
-            self.assertEquals(response.msg,'actor1 to actor2 response')
-            self.assertEquals(actor2.withresponse_msg.msg,'actor1 to actor2 request')
-            self.assertEquals(actor2.withresponse_actor.name,'actor2')
+                    self.assertRaises(ValueError, actor1.sendrecv,'actorundefined', dummy)
 
-            self.assertRaises(ValueError, actor1.sendrecv,'actorundefined', dummy)
+                    response = actor1.sendrecv('actor1', 
+                                               BuggyMessage())
+                    self.assertEquals(response.type,'nack')
+                    self.assertEquals(response.msg,'raised')
+                    
 
-            response = actor1.sendrecv('actor1', 
-                                       BuggyMessage())
-            self.assertEquals(response.type,'nack')
-            self.assertEquals(response.msg,'raised')
-            
+                    response = actor1.sendrecv('actor1', 
+                                               UnmanagedMessage())
+                    self.assertEquals(response.type,'nack')
+                    
+                    
+                    response = actor1.sendrecv('actor1', 
+                                               HelloMessage(actor1.name,actor1._uri))
+                    self.assertEquals(response.type,'ack')
+                    response = actor1.sendrecv('actor2', 
+                                               HelloMessage(actor1.name,actor1._uri))
+                    self.assertEquals(response.type,'ack')
 
-            response = actor1.sendrecv('actor1', 
-                                       UnmanagedMessage())
-            self.assertEquals(response.type,'nack')
-            
-            
-            response = actor1.sendrecv('actor1', 
-                                       HelloMessage(actor1.name,actor1._uri))
-            self.assertEquals(response.type,'ack')
-            response = actor1.sendrecv('actor2', 
-                                       HelloMessage(actor1.name,actor1._uri))
-            self.assertEquals(response.type,'ack')
+                    response = actor1.sendrecv('actor2', 
+                                               IsAtMessage(actor1.name,actor1._uri))
+                    self.assertEquals(response.type,'ack')
+                    
 
-            response = actor1.sendrecv('actor2', 
-                                       IsAtMessage(actor1.name,actor1._uri))
-            self.assertEquals(response.type,'ack')
-            
+                    response = actor1.sendrecv('actor1', ByeMessage("actor1"))
+                    self.assertEquals(response.type,'ack')
 
-            response = actor1.sendrecv('actor1', ByeMessage("actor1"))
-            self.assertEquals(response.type,'ack')
+                    response = actor1.sendrecv('actor1', ByeMessage("actor2"))
+                    self.assertEquals(response.type,'ack')
 
-            response = actor1.sendrecv('actor1', ByeMessage("actor2"))
-            self.assertEquals(response.type,'ack')
-
-            oldcodec = actor2._codec 
-            actor2._codec = BuggyMessageCodec(None)
-            response = actor1.sendrecv('actor2', dummy)
-            self.assertEquals(response.type,'nack')
-            actor2._codec = oldcodec 
-            
-            self.assertEquals(len(srv._nodes._nodes),2)
-            actor1.close()
-            actor2.close()
+                    oldcodec = actor2._codec 
+                    actor2._codec = BuggyMessageCodec(None)
+                    response = actor1.sendrecv('actor2', dummy)
+                    self.assertEquals(response.type,'nack')
+                    actor2._codec = oldcodec 
+                    
+                    self.assertEquals(len(srv._nodes._nodes),2)
+                self.assertEquals(len(srv._nodes._nodes),1)
             self.assertEquals(len(srv._nodes._nodes),0)
 
 
