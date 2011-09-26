@@ -328,8 +328,9 @@ class Actor(object):
             callback that takes a message.Message subclass object
 
         """
-        msgstring = incoming_msg.get()
-        replystring = func(msgstring)
+        msg = incoming_msg.get()
+        #assert msg.id == msgid
+        replystring = func(msg)
         del self._pendings[msgid]
 
 
