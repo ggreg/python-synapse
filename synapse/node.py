@@ -275,8 +275,6 @@ class Actor(object):
         self._announce = AnnounceClient(config, self.on_message)
         self._nodes = NodeDirectory(config, self._announce)
         self._handler = handler if handler else getattr(self, 'handle_message', None)
-        if hasattr(handler, 'async'):
-            self._handler.async = True
         self._tasks = []
         self._pendings = {}
         self._log = logging.getLogger(self.name)
