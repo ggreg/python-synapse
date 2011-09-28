@@ -272,6 +272,7 @@ class Actor(object):
                 'role': 'server'
                 },
                 self.on_message)
+        config['type'] = 'zmq'
         self._announce = AnnounceClient(config, self.on_message)
         self._nodes = NodeDirectory(config, self._announce)
         self._handler = handler if handler else getattr(self, 'handle_message', None)
@@ -974,21 +975,23 @@ class ZMQSubscribe(ZMQNode):
 
 # factories function
 
+node_registry = {
+                'zmq': {
+                    'roles': {
+                        'client':   ZMQClient,
+                        'server':   ZMQServer,
+                        'publish':  ZMQPublish,
+                        'subscribe':ZMQSubscribe
+                    }
+                },
+            }
+
+def registerNode(name, config):
+    node_registry[name] = config
+
 def makeNode(config, handler=None):
-    dispatch = {'zmq': {
-                'class': ZMQNode,
-                'roles': {
-                    'client':   ZMQClient,
-                    'server':   ZMQServer,
-                    'publish':  ZMQPublish,
-                    'subscribe':ZMQSubscribe}}}
-
-    cls = dispatch[config['type']]['class']
-    if 'role' in config:
-        cls = dispatch[config['type']]['roles'][config['role']]
-
+    cls = node_registry[config['type']]['roles'][config['role']]
     return cls(config, handler) if handler else cls(config)
-
 
 def makePoller(config):
     dispatch = {'zmq': EventPoller}
