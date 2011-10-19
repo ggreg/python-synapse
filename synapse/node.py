@@ -719,10 +719,10 @@ class EventPoller(Poller):
         while self._loop_again:
             gevent.core.loop()
 
-    def stop():
+    def stop(self):
         [g.kill for g in self._periodical_handlers]
         self._periodical_handlers = []
-        
+
         self._old_periodic_handler = None
         self._old_timeout = None
 
