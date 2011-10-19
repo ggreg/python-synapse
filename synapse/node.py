@@ -720,7 +720,7 @@ class EventPoller(Poller):
             gevent.core.loop()
 
     def stop(self):
-        [g.kill for g in self._periodical_handlers]
+        [g.kill() for g in self._periodical_handlers]
         self._periodical_handlers = []
 
         self._old_periodic_handler = None
