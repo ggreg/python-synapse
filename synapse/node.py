@@ -85,14 +85,6 @@ from synapse.message import ( makeMessage, makeCodec,
 
 _context = zmq.Context()
 
-# FIXME: unused
-# remove it ?
-def mixIn(target, mixin_class):
-    if mixin_class not in target.__bases__:
-        target.__bases__ = (mixin_class,) + target.__bases__
-    return target
-
-
 # decorators
 
 def async(func):
@@ -136,7 +128,20 @@ class Node(object):
     receive messages from or send messages to other nodes connected by an edge.
 
     """
-    name = 'ANONYMOUS'
+    
+    def __init__(self,config=None):
+        config = config or {}
+        self._name = config.get('name','ANONYMOUS')
+        self._uri = config.get('uri',None)
+
+    @property
+    def name(self):
+        return self._name
+
+    @property
+    def uri(self):
+        return self._uri
+    
     def send(self, dst, msg):
         raise NotImplementedError()
 
@@ -269,14 +274,13 @@ class Actor(object):
                 'name': config['name'],
                 'type': config['type'],
                 'uri':  self._uri,
-                'role': 'server'
+                'role': config.get('role','server')
                 },
                 self.on_message)
         config['type'] = 'zmq'
         self._announce = AnnounceClient(config, self.on_message)
         self._nodes = NodeDirectory(config, self._announce)
         self._handler = handler if handler else getattr(self, 'handle_message', None)
-        self._tasks = []
         self._pendings = {}
         self._log = logging.getLogger(self.name)
 
@@ -298,11 +302,16 @@ class Actor(object):
     def __exit__(self, type, value, traceback):
         self.close()
 
-
+    @classmethod
+    def spawn(cls,config):
+        def run():
+            with cls(config):
+                pass
+        return gevent.spawn(run)
+        
     @property
     def name(self):
         return self._name
-
 
     def connect(self):
         """
@@ -315,11 +324,8 @@ class Actor(object):
         self._greenlet = poller.register(self._mailbox)
 
         self._announce.connect()
-        # client do not need to be registred
-        #poller.register(self._announce._client)
         self._greenlet_ann_sub = poller.register(self._announce._subscriber)
         self._announce.hello(self._mailbox)
-
         self._log.debug('connected')
 
     def close(self):
@@ -455,6 +461,11 @@ class Actor(object):
                 reply = AckMessage(self.name)
             return self._codec.dumps(reply)
 
+    @catch_exceptions(MessageException)
+    def on_announce(self, msgstring):
+        print msgstring
+        
+
 
     def on_message_hello(self,actor, msg):
         if msg.uri == self._uri or not self._uri:
@@ -502,7 +513,7 @@ class AnnounceServer(object):
                 'uri':  config['announce']['pubsub_uri'],
                 'role': 'publish'
                 })
-        self._nodes = NodeDirectory(config)
+        self._nodes = {} #NodeDirectory(config)
         self._log = logging.getLogger(self.name)
 
 
@@ -524,19 +535,20 @@ class AnnounceServer(object):
 
     def handle_message(self, msgstring):
         msg = self._codec.loads(msgstring)
+        print repr(msg)
         if msg.type == 'hello':
             self._log.debug('hello from %s' % msg.src)
-            self._nodes.add(msg.src, msg.uri)
+            self._nodes[msg.src] = msg.uri
             reply = AckMessage(self._server.name)
         if msg.type == 'bye':
-            self._nodes.remove(msg.src)
+            del self._nodes[msg.src]
             reply = AckMessage(self._server.name)
         if msg.type == 'where_is':
             if msg.name not in self._nodes:
                 reply = UnknownNodeMessage(msg.name)
             else:
                 node = self._nodes[msg.name]
-                reply = IsAtMessage(msg.name, node.uri)
+                reply = IsAtMessage(msg.name, node)
         return self._codec.dumps(reply)
 
 
@@ -595,7 +607,6 @@ class AnnounceClient(object):
         if self._subscriber:
             self._subscriber.connect()
         self._client.connect()
-
 
     def close(self):
         if self._subscriber:
@@ -823,27 +834,14 @@ class ZMQNode(Node):
     type = 'zmq'
 
     def __init__(self, config):
-        self._name = config.get('name', 'ANONYMOUS')
-        self._uri = config['uri']
+        Node.__init__(self,config)
         self._socket = None
         self._lock = gevent.coros.Semaphore()
         self._log = logging.getLogger(self.name)
 
-
-    @property
-    def name(self):
-        return self._name
-
-
-    @property
-    def uri(self):
-        return self._uri
-
-
     @property
     def socket(self):
         return self._socket
-
 
     def send(self, msg):
         """
@@ -955,10 +953,10 @@ class ZMQSubscribe(ZMQNode):
 
     def connect(self):
         self._socket = _context.socket(zmq.SUB)
-        #self._socket.bind(self._uri)
         self._socket.connect(self._uri)
         self._socket.setsockopt(zmq.SUBSCRIBE, '')
-
+        print self._uri
+    
 
     def loop(self):
         while True:

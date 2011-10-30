@@ -50,19 +50,6 @@ class DecoratorTestCase(TestCase):
             self.assertEquals(str(e), "dummy message")
 
     
-    def test_mixin(self):
-        """
-        FIXME: unused function: remove it ?
-        """
-        from synapse.node import mixIn
-        
-        class A(object):pass
-        class B: pass
-        
-        mixIn(A,B)
-        self.assertTrue(isinstance(A(),B))
-
-
 class NodeTestCase(TestCase):
 
     def test_node(self):
@@ -202,10 +189,10 @@ class ActorTestCase(TestCase):
         self.assertEquals(hdl.withresponse_actor.name,'actor1')
         self.assertEquals(hdl.withresponse_msg.msg,'actor2 to actor1 request')
         
-        self.assertEquals(len(srv._nodes._nodes),2)
+        self.assertEquals(len(srv._nodes),2)
         actor1.__del__()
         actor2.close()
-        self.assertEquals(len(srv._nodes._nodes),0)
+        self.assertEquals(len(srv._nodes),0)
         srv.stop()
 
     def test_actor_async(self):
@@ -286,10 +273,10 @@ class ActorTestCase(TestCase):
         self.assertEquals(hdl.async_response,'actor2 async response')
         self.assertEquals(len(actor1._pendings), 0)
         
-        self.assertEquals(len(srv._nodes._nodes),2)
+        self.assertEquals(len(srv._nodes),2)
         actor1.close()
         actor2.close()
-        self.assertEquals(len(srv._nodes._nodes),0)
+        self.assertEquals(len(srv._nodes),0)
         srv.stop()
 
 
@@ -416,9 +403,9 @@ class ActorTestCase(TestCase):
                     self.assertEquals(response.type,'nack')
                     actor2._codec = oldcodec 
                     
-                    self.assertEquals(len(srv._nodes._nodes),2)
-                self.assertEquals(len(srv._nodes._nodes),1)
-            self.assertEquals(len(srv._nodes._nodes),0)
+                    self.assertEquals(len(srv._nodes),2)
+                self.assertEquals(len(srv._nodes),1)
+            self.assertEquals(len(srv._nodes),0)
 
 
 

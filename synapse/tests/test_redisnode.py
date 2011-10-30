@@ -10,9 +10,9 @@ from synapse.node import poller
 class RedisTestCase(TestCase):
 
     def test_registerNode(self):
-        from synapse.redis_node import regiserNode 
+        from synapse.redis_node import registerNode 
         from synapse import node
-        regiserNode()
+        registerNode()
         self.assertTrue('redis' in node.node_registry)
 
     def test_redis_queue(self):

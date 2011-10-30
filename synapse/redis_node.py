@@ -3,10 +3,15 @@ import logging
 
 
 import gevent
+#from redis.gevent_client import Redis
+from redis import connection 
+import gevent.socket
+connection.socket = gevent.socket
 
-from redis import Redis
+from redis.client import Redis
 
-from .node import Node, registerNode
+
+from synapse.node import Node, registerNode as regNode
 
 
 """
@@ -33,7 +38,7 @@ def parse_uri(uri):
     params = g.group('params' or '')
     
     rv = { 'host': host, 'port': port, 'db': db, 
-            'password': password, 'gevent_socket': True }
+            'password': password }
 
     if params:
         rv.update(dict([ p.split("=",1) for p in params.split('&') ]))
@@ -76,7 +81,7 @@ class RedisPublisher(RedisNode):
     def start(self):
         conf = parse_uri(self._uri)
         self._channel = conf.pop('channel',self._name)
-        self._method = conf.pop('method', 'pubsub')
+        self._method = conf.pop('method', 'queue')
         self._client = Redis(**conf)
 
     def stop(self):
@@ -116,6 +121,10 @@ class RedisSubscriber(RedisNode):
         if self._method == 'pubsub':
             self._pubsub = self._client.pubsub()
             self._pubsub.subscribe(self._channel)
+            
+    def start(self):
+        self.connect()
+        self.loop()
 
     def loop(self):
         while True:
@@ -148,8 +157,8 @@ class RedisSubscriber(RedisNode):
 
 
 
-def regiserNode():
-    registerNode('redis', {
+def registerNode():
+    regNode('redis', {
                     'roles': {
                         'publish':  RedisPublisher,
                         'subscribe':RedisSubscriber
