@@ -297,8 +297,8 @@ class Actor(object):
     def __enter__(self):
         self.connect()
         return self
-    
-    
+
+
     def __exit__(self, type, value, traceback):
         self.close()
 
@@ -333,7 +333,7 @@ class Actor(object):
         self._announce.close()
         self._mailbox.stop()
         [gevent.kill(g) for g in ( self._greenlet, self._greenlet_ann_sub) if g]
-                      
+
 
     def will_handle(self, msgid, incoming_msg, func):
         """Wait on the *incoming_msg* queue. Defers the message handling.
@@ -521,15 +521,15 @@ class AnnounceServer(object):
         self._publisher.start()
         self._server.start()
         poller.register(self._server)
-    
+
     def stop(self):
         self._publisher.stop()
         self._server.stop()
-        
+
     def __enter__(self):
         self.start()
         return self
-    
+
     def __exit__(self, type, value, traceback):
         self.stop()
 
@@ -644,11 +644,11 @@ class AnnounceClient(object):
 
     def handle_announce(self, socket, events):
         """
-        FIXME: 
-            - undocumented funtion 
+        FIXME:
+            - undocumented funtion
             - neither socket nor events is used
             - msgstring is undefined
-        
+
         request = self._codec.loads(msgstring)
         self._handler(request)
         """
@@ -722,12 +722,20 @@ class EventPoller(Poller):
         """
         assert(callable(handler))
         assert(timeout > 0)
-        period = self.spawn(self.periodical_loop, handler, timeout)
+        period = self.spawn(self.periodical_loop,
+                                           handler, timeout)
         self._periodical_handlers.append(period)
 
     def loop(self):
         while self._loop_again:
             gevent.core.loop()
+
+    def stop(self):
+        [g.kill() for g in self._periodical_handlers]
+        self._periodical_handlers = []
+
+        self._old_periodic_handler = None
+        self._old_timeout = None
 
     def periodical_loop(self, handler, timeout):
         """Call the `handler` each `timeout` seconds.
@@ -762,7 +770,7 @@ class EventPoller(Poller):
         if getattr(node, 'loop', None):
             greenlet = self.spawn(node.loop)
             return greenlet
-        
+
     def spawn(self, handler, *args, **kwargs):
         """Spawn a new greenlet, and link it to the current greenlet when an
         exception is raise. This will cause to make the current process to stop
@@ -854,7 +862,7 @@ class ZMQNode(Node):
         ret = self._socket.send(msg)
         self._lock.release()
         return ret
-        
+
     def recv(self):
         """
         Return a message as a string from the receiving queue.
@@ -878,7 +886,7 @@ class ZMQNode(Node):
 
 
 class ZMQServer(ZMQNode):
-    
+
     def __init__(self, config, handler):
         ZMQNode.__init__(self, config)
         self._handler = handler
@@ -909,13 +917,13 @@ class ZMQServer(ZMQNode):
 
 
 class ZMQClient(ZMQNode):
-    
+
     def connect(self):
         self._socket = _context.socket(zmq.REQ)
         self._socket.connect(self._uri)
         # client side do not need to be registred, they are not looping
         #poller.register(self)
-        
+
     def close(self):
         self._socket.close()
 
