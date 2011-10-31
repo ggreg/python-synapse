@@ -1,15 +1,12 @@
 import re
 import logging
 
-
 import gevent
 #from redis.gevent_client import Redis
-from redis import connection 
+from redis import connection
 import gevent.socket
 connection.socket = gevent.socket
-
 from redis.client import Redis
-
 
 from synapse.node import Node, registerNode as regNode
 
@@ -36,14 +33,15 @@ def parse_uri(uri):
     port = int(g.group('port') or 6379)
     db = int(g.group('db') or 0)
     params = g.group('params' or '')
-    
-    rv = { 'host': host, 'port': port, 'db': db, 
-            'password': password }
+
+    rv = {'host': host, 'port': port, 'db': db,
+          'password': password}
 
     if params:
-        rv.update(dict([ p.split("=",1) for p in params.split('&') ]))
-    
+        rv.update(dict([p.split("=", 1) for p in params.split('&')]))
+
     return rv
+
 
 class RedisNode(Node):
     """Node built on top of Redis.
@@ -76,11 +74,12 @@ class RedisNode(Node):
     def recv(self):
         raise NotImplementedError()
 
+
 class RedisPublisher(RedisNode):
-    
+
     def start(self):
         conf = parse_uri(self._uri)
-        self._channel = conf.pop('channel',self._name)
+        self._channel = conf.pop('channel', self._name)
         self._method = conf.pop('method', 'queue')
         self._client = Redis(**conf)
 
@@ -96,32 +95,31 @@ class RedisPublisher(RedisNode):
         """
         self._lock.acquire()
         if self._method == 'pubsub':
-            ret = self._client.publish(self._channel,msg)
+            ret = self._client.publish(self._channel, msg)
             if ret < 1:
                 self._log.error('No subscriber receive this message ')
         else:
-            ret = self._client.rpush(self._channel,msg)
+            ret = self._client.rpush(self._channel, msg)
         self._lock.release()
         return ret
 
 
-
 class RedisSubscriber(RedisNode):
+
     def __init__(self, config, handler):
         RedisNode.__init__(self, config)
         self._handler = handler
 
-
     def connect(self):
         conf = parse_uri(self._uri)
-        self._channel = conf.pop('channel',self._name)
+        self._channel = conf.pop('channel', self._name)
         self._method = conf.pop('method', 'pubsub')
         self._client = Redis(**conf)
 
         if self._method == 'pubsub':
             self._pubsub = self._client.pubsub()
             self._pubsub.subscribe(self._channel)
-            
+
     def start(self):
         self.connect()
         self.loop()
@@ -143,8 +141,7 @@ class RedisSubscriber(RedisNode):
             msg = self._pubsub.listen().next()['data']
         else:
             msg = self._client.blpop(self._channel)[1]
-            
-            
+
         self._log.debug('redisclient: %s' % self._name)
         self._log.debug('recv -> %s' % msg)
         self._lock.release()
@@ -156,12 +153,6 @@ class RedisSubscriber(RedisNode):
         self._client.connection_pool.disconnect()
 
 
-
 def registerNode():
-    regNode('redis', {
-                    'roles': {
-                        'publish':  RedisPublisher,
-                        'subscribe':RedisSubscriber
-                    }
-                })
-
+    regNode('redis', {'roles': {'publish':  RedisPublisher,
+                                'subscribe': RedisSubscriber}})

@@ -63,8 +63,6 @@ period is 10s, and the handler call takes 5s, the total time for a loop will be
 
 """
 import logging
-import math
-import time
 import os
 
 import gevent
@@ -73,17 +71,16 @@ import gevent.queue
 import gevent.coros
 from gevent_zeromq import zmq
 
-from synapse.message import ( makeMessage, makeCodec,
+from synapse.message import (makeCodec,
                             HelloMessage, ByeMessage,
                             WhereIsMessage, IsAtMessage,
                             UnknownNodeMessage, AckMessage,
                             NackMessage, MessageException,
                             MessageInvalidException,
-                            CodecException )
-
-
+                            CodecException)
 
 _context = zmq.Context()
+
 
 # decorators
 
@@ -104,13 +101,14 @@ def catch_exceptions(*exceptions):
         return wrapped_method
     return wrapper
 
+
 # exceptions
 
 class NodeException(Exception):
+
     def __init__(self, errmsg, reply):
         self.errmsg = errmsg
         self.reply = reply
-
 
     def __str__(self):
         return self.errmsg
@@ -128,11 +126,11 @@ class Node(object):
     receive messages from or send messages to other nodes connected by an edge.
 
     """
-    
-    def __init__(self,config=None):
+
+    def __init__(self, config=None):
         config = config or {}
-        self._name = config.get('name','ANONYMOUS')
-        self._uri = config.get('uri',None)
+        self._name = config.get('name', 'ANONYMOUS')
+        self._uri = config.get('uri', None)
 
     @property
     def name(self):
@@ -141,10 +139,9 @@ class Node(object):
     @property
     def uri(self):
         return self._uri
-    
+
     def send(self, dst, msg):
         raise NotImplementedError()
-
 
     def recv(self, src):
         raise NotImplementedError()
@@ -175,10 +172,8 @@ class NodeDirectory(object):
         self._announce = announce
         self._nodes = {}
 
-
     def __contains__(self, name):
         return self._nodes.__contains__(name)
-
 
     def __getitem__(self, name):
         """
@@ -199,7 +194,6 @@ class NodeDirectory(object):
                     return self.add(name, rep.uri)
             raise ValueError("Node %s is unknown" % name)
 
-
     def add(self, name, uri):
         """Add a new node to the directory. If the node is not already
         connected, connect it.
@@ -219,7 +213,6 @@ class NodeDirectory(object):
         if not s or s.closed:
             self._nodes[name].connect()
         return self._nodes[name]
-
 
     def remove(self, name):
         """
@@ -267,23 +260,20 @@ class Actor(object):
     def __init__(self, config, handler=None):
         self._uri = config['uri']
         self._name = config['name']
-        self._codec = makeCodec({
-                'type': config['codec']
-                })
+        self._codec = makeCodec({'type': config['codec']})
         self._mailbox = makeNode({
                 'name': config['name'],
                 'type': config['type'],
                 'uri':  self._uri,
-                'role': config.get('role','server')
-                },
+                'role': config.get('role', 'server')},
                 self.on_message)
         config['type'] = 'zmq'
         self._announce = AnnounceClient(config, self.on_message)
         self._nodes = NodeDirectory(config, self._announce)
-        self._handler = handler if handler else getattr(self, 'handle_message', None)
+        self._handler = handler if handler else getattr(self,
+                                                        'handle_message', None)
         self._pendings = {}
         self._log = logging.getLogger(self.name)
-
 
     def __del__(self):
         """
@@ -293,22 +283,20 @@ class Actor(object):
         """
         self.close()
 
-
     def __enter__(self):
         self.connect()
         return self
-
 
     def __exit__(self, type, value, traceback):
         self.close()
 
     @classmethod
-    def spawn(cls,config):
+    def spawn(cls, config):
         def run():
             with cls(config):
                 pass
         return gevent.spawn(run)
-        
+
     @property
     def name(self):
         return self._name
@@ -332,8 +320,7 @@ class Actor(object):
         self._announce.bye(self)
         self._announce.close()
         self._mailbox.stop()
-        [gevent.kill(g) for g in ( self._greenlet, self._greenlet_ann_sub) if g]
-
+        [gevent.kill(g) for g in (self._greenlet, self._greenlet_ann_sub) if g]
 
     def will_handle(self, msgid, incoming_msg, func):
         """Wait on the *incoming_msg* queue. Defers the message handling.
@@ -351,9 +338,8 @@ class Actor(object):
         """
         msg = incoming_msg.get()
         #assert msg.id == msgid
-        replystring = func(msg)
+        func(msg)
         del self._pendings[msgid]
-
 
     def sendrecv(self, node_name, msg, on_recv=None):
         """Send a message to a node and receive the reply.
@@ -392,7 +378,6 @@ class Actor(object):
         reply = remote.recv()
         return self._codec.loads(reply)
 
-
     def wake_message_worker(self, msg):
         """Wake a greenlet to handle message with a specific id.
 
@@ -400,7 +385,6 @@ class Actor(object):
 
         """
         self._pendings[msg.id].put(msg)
-
 
     @catch_exceptions(MessageException)
     def on_message(self, msgstring):
@@ -464,23 +448,19 @@ class Actor(object):
     @catch_exceptions(MessageException)
     def on_announce(self, msgstring):
         print msgstring
-        
 
-
-    def on_message_hello(self,actor, msg):
+    def on_message_hello(self, actor, msg):
         if msg.uri == self._uri or not self._uri:
             return
         self._nodes.add(msg.src, msg.uri)
 
-
-    def on_message_is_at(self,actor, msg):
+    def on_message_is_at(self, actor, msg):
         self._nodes.add(msg.name, msg.uri)
 
     def on_message_bye(self, actor, msg):
         if msg.src == self.name:
             return
         self._nodes.remove(msg.src)
-
 
 
 class AnnounceServer(object):
@@ -498,24 +478,21 @@ class AnnounceServer(object):
     def __init__(self, config):
         self.name = 'announce.server'
         self._codec = makeCodec({
-                'type': config['codec']
-                })
+                'type': config['codec']})
         self._server = makeNode({
                 'name': self.name,
                 'type': config['type'],
                 'uri':  config['announce']['server_uri'],
-                'role': 'server'
-                },
+                'role': 'server'},
                 self.handle_message)
         self._publisher = makeNode({
                 'name': 'announce.publisher',
                 'type': config['type'],
                 'uri':  config['announce']['pubsub_uri'],
-                'role': 'publish'
-                })
-        self._nodes = {} #NodeDirectory(config)
-        self._log = logging.getLogger(self.name)
+                'role': 'publish'})
 
+        self._nodes = {}  # NodeDirectory(config)
+        self._log = logging.getLogger(self.name)
 
     def start(self):
         self._publisher.start()
@@ -550,7 +527,6 @@ class AnnounceServer(object):
                 node = self._nodes[msg.name]
                 reply = IsAtMessage(msg.name, node)
         return self._codec.dumps(reply)
-
 
 
 class AnnounceClient(object):
@@ -597,11 +573,9 @@ class AnnounceClient(object):
         self._handler = handler
         self._log = logging.getLogger(self.name)
 
-
     @property
     def nodes(self):
         return self._nodes
-
 
     def connect(self):
         if self._subscriber:
@@ -613,34 +587,28 @@ class AnnounceClient(object):
             self._subscriber.close()
         self._client.close()
 
-
     def send_to(self, dst, msg):
         self._log.debug('message %s#%d' % (msg.type, msg.id))
         return dst.send(self._codec.dumps(msg))
 
-
     def recv_from(self, src):
         msg = src.recv()
         return self._codec.loads(msg)
-
 
     def hello(self, node):
         msg = HelloMessage(node.name, node.uri)
         self.send_to(self._client, msg)
         return self.recv_from(self._client)
 
-
     def bye(self, node):
         msg = ByeMessage(node.name)
         self.send_to(self._client, msg)
         return self.recv_from(self._client)
 
-
     def where_is(self, other_node_name):
         msg = WhereIsMessage(other_node_name)
         self.send_to(self._client, msg)
         return self.recv_from(self._client)
-
 
     def handle_announce(self, socket, events):
         """
@@ -662,10 +630,8 @@ class Poller(object):
     def loop(self):
         raise NotImplementedError()
 
-
     def register(self, node):
         raise NotImplementedError()
-
 
     def poll(self):
         """Warning blocks until a event happens on a monitored socket. Can
@@ -673,7 +639,6 @@ class Poller(object):
 
         """
         raise NotImplementedError()
-
 
 
 class EventPoller(Poller):
@@ -691,13 +656,14 @@ class EventPoller(Poller):
 
     def get_timeout(self):
         return self._old_timeout
+
     def set_timeout(self, timeout):
         self._old_timeout = timeout
     timeout = property(get_timeout, set_timeout)
 
-
     def get_periodic_handler(self):
         return self._old_periodic_handler
+
     def set_periodic_handler(self, handler):
         if self._old_periodic_handler:
             raise PollerException('periodic handler already defined')
@@ -795,7 +761,8 @@ class EventPoller(Poller):
             name = handler.__name__
         else:
             name = handler.__class__
-        self._log.debug('spawn function %s in greenlet %s' % (name, str(greenlet)))
+        self._log.debug('spawn function %s in greenlet %s' % (name,
+                                                              str(greenlet)))
         assert greenlet is not None
         return greenlet
 
@@ -822,7 +789,7 @@ class EventPoller(Poller):
             """Catch exceptions and log them"""
             try:
                 return handler(*args, **kwargs)
-            except Exception, err:
+            except Exception:
                 import traceback
                 map(self._log.error, traceback.format_exc().splitlines())
                 raise
@@ -842,7 +809,7 @@ class ZMQNode(Node):
     type = 'zmq'
 
     def __init__(self, config):
-        Node.__init__(self,config)
+        Node.__init__(self, config)
         self._socket = None
         self._lock = gevent.coros.Semaphore()
         self._log = logging.getLogger(self.name)
@@ -927,6 +894,7 @@ class ZMQClient(ZMQNode):
     def close(self):
         self._socket.close()
 
+
 class ZMQPublish(ZMQNode):
     """Prove the publish side of a PUB/SUB topology.
 
@@ -937,7 +905,6 @@ class ZMQPublish(ZMQNode):
     def start(self):
         self._socket = _context.socket(zmq.PUB)
         self._socket.bind(self._uri)
-
 
     def recv(self):
         raise NotImplementedError()
@@ -958,13 +925,11 @@ class ZMQSubscribe(ZMQNode):
         ZMQNode.__init__(self, config)
         self._handler = handler
 
-
     def connect(self):
         self._socket = _context.socket(zmq.SUB)
         self._socket.connect(self._uri)
         self._socket.setsockopt(zmq.SUBSCRIBE, '')
         print self._uri
-    
 
     def loop(self):
         while True:
@@ -972,9 +937,8 @@ class ZMQSubscribe(ZMQNode):
             raw_request = self.recv()
             self._handler(raw_request)
 
-
     def send(self, msg):
-        raise NotImplementedError()
+        raise NotImplementedError
 
     def close(self):
         self._socket.close()
@@ -987,17 +951,18 @@ node_registry = {
                         'client':   ZMQClient,
                         'server':   ZMQServer,
                         'publish':  ZMQPublish,
-                        'subscribe':ZMQSubscribe
-                    }
-                },
-            }
+                        'subscribe': ZMQSubscribe
+                        }}}
+
 
 def registerNode(name, config):
     node_registry[name] = config
 
+
 def makeNode(config, handler=None):
     cls = node_registry[config['type']]['roles'][config['role']]
     return cls(config, handler) if handler else cls(config)
+
 
 def makePoller(config):
     dispatch = {'zmq': EventPoller}
