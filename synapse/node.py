@@ -1,3 +1,6 @@
+#!/usr/bin/env python
+# -*- coding: utf8 -*-
+
 """
 Provides Node and Actor.
 
@@ -60,8 +63,6 @@ period is 10s, and the handler call takes 5s, the total time for a loop will be
 
 """
 import logging
-import math
-import time
 import os
 
 import gevent
@@ -70,22 +71,54 @@ import gevent.queue
 import gevent.coros
 from gevent_zeromq import zmq
 
-from synapse.message import makeMessage, makeCodec, \
-                            HelloMessage, ByeMessage, \
-                            WhereIsMessage, IsAtMessage, \
-                            UnknownNodeMessage, AckMessage, \
-                            NackMessage, MessageException, \
-                            MessageInvalidException, \
-                            CodecException
-
-
+from synapse.message import (makeCodec,
+                            HelloMessage, ByeMessage,
+                            WhereIsMessage, IsAtMessage,
+                            UnknownNodeMessage, AckMessage,
+                            NackMessage, MessageException,
+                            MessageInvalidException,
+                            CodecException)
 
 _context = zmq.Context()
 
 
+# decorators
+
+def async(func):
+    """Use this simple decorator to tell when a callback is asynchronous"""
+    func.async = True
+    return func
 
 
+def catch_exceptions(*exceptions):
+    def wrapper(method):
+        def wrapped_method(actor, *args, **kwargs):
+            try:
+                return method(actor, *args, **kwargs)
+            except Exception, err:
+                raise NodeException(str(err),
+                        actor._codec.dumps(NackMessage(actor.name, str(err))))
+        return wrapped_method
+    return wrapper
 
+
+# exceptions
+
+class NodeException(Exception):
+
+    def __init__(self, errmsg, reply):
+        self.errmsg = errmsg
+        self.reply = reply
+
+    def __str__(self):
+        return self.errmsg
+
+
+class PollerException(Exception):
+    pass
+
+
+# base types
 
 class Node(object):
     """Node abstract interface.
@@ -93,21 +126,25 @@ class Node(object):
     receive messages from or send messages to other nodes connected by an edge.
 
     """
-    name = 'ANONYMOUS'
+
+    def __init__(self, config=None):
+        config = config or {}
+        self._name = config.get('name', 'ANONYMOUS')
+        self._uri = config.get('uri', None)
+
+    @property
+    def name(self):
+        return self._name
+
+    @property
+    def uri(self):
+        return self._uri
+
     def send(self, dst, msg):
         raise NotImplementedError()
 
-
     def recv(self, src):
         raise NotImplementedError()
-
-
-
-def async(func):
-    """Use this simple decorator to tell when a callback is asynchronous"""
-    func.async = True
-    return func
-
 
 
 class NodeDirectory(object):
@@ -135,10 +172,8 @@ class NodeDirectory(object):
         self._announce = announce
         self._nodes = {}
 
-
     def __contains__(self, name):
         return self._nodes.__contains__(name)
-
 
     def __getitem__(self, name):
         """
@@ -159,9 +194,8 @@ class NodeDirectory(object):
                     return self.add(name, rep.uri)
             raise ValueError("Node %s is unknown" % name)
 
-
     def add(self, name, uri):
-        """Add a new node to the directory. Ff the node is not already
+        """Add a new node to the directory. If the node is not already
         connected, connect it.
 
         :Parameters:
@@ -180,23 +214,16 @@ class NodeDirectory(object):
             self._nodes[name].connect()
         return self._nodes[name]
 
-
-    def remove(self, name, uri):
+    def remove(self, name):
+        """
+        remove a node from the direcory
+        Arguments:
+            :name name: name of the node to remove
+            :name type: str
+            :return: None
+            :raises KeyError: if the node is not register is the directory
+        """
         del self._nodes[name]
-
-
-
-def catch_exceptions(*exceptions):
-    def wrapper(method):
-        def wrapped_method(actor, *args, **kwargs):
-            try:
-                return method(actor, *args, **kwargs)
-            except Exception, err:
-                raise NodeException(str(err),
-                        actor._codec.dumps(NackMessage(actor.name, str(err))))
-        return wrapped_method
-    return wrapper
-
 
 
 class Actor(object):
@@ -233,25 +260,20 @@ class Actor(object):
     def __init__(self, config, handler=None):
         self._uri = config['uri']
         self._name = config['name']
-        self._codec = makeCodec({
-                'type': config['codec']
-                })
+        self._codec = makeCodec({'type': config['codec']})
         self._mailbox = makeNode({
                 'name': config['name'],
                 'type': config['type'],
                 'uri':  self._uri,
-                'role': 'server'
-                },
+                'role': config.get('role', 'server')},
                 self.on_message)
+        config['type'] = 'zmq'
         self._announce = AnnounceClient(config, self.on_message)
         self._nodes = NodeDirectory(config, self._announce)
-        self._handler = handler if handler else getattr(self, 'handle_message', None)
-        if hasattr(handler, 'async'):
-            self._handler.async = True
-        self._tasks = []
+        self._handler = handler if handler else getattr(self,
+                                                        'handle_message', None)
         self._pendings = {}
         self._log = logging.getLogger(self.name)
-
 
     def __del__(self):
         """
@@ -259,13 +281,25 @@ class Actor(object):
         :class:`Actor` object is destroyed.
 
         """
-        self._announce.bye(self)
+        self.close()
 
+    def __enter__(self):
+        self.connect()
+        return self
+
+    def __exit__(self, type, value, traceback):
+        self.close()
+
+    @classmethod
+    def spawn(cls, config):
+        def run():
+            with cls(config):
+                pass
+        return gevent.spawn(run)
 
     @property
     def name(self):
         return self._name
-
 
     def connect(self):
         """
@@ -275,15 +309,18 @@ class Actor(object):
 
         """
         self._mailbox.start()
-        poller.register(self._mailbox)
+        self._greenlet = poller.register(self._mailbox)
 
         self._announce.connect()
-        poller.register(self._announce._client)
-        poller.register(self._announce._subscriber)
+        self._greenlet_ann_sub = poller.register(self._announce._subscriber)
         self._announce.hello(self._mailbox)
-
         self._log.debug('connected')
 
+    def close(self):
+        self._announce.bye(self)
+        self._announce.close()
+        self._mailbox.stop()
+        [gevent.kill(g) for g in (self._greenlet, self._greenlet_ann_sub) if g]
 
     def will_handle(self, msgid, incoming_msg, func):
         """Wait on the *incoming_msg* queue. Defers the message handling.
@@ -299,10 +336,10 @@ class Actor(object):
             callback that takes a message.Message subclass object
 
         """
-        msgstring = incoming_msg.get()
-        replystring = func(msgstring)
+        msg = incoming_msg.get()
+        #assert msg.id == msgid
+        func(msg)
         del self._pendings[msgid]
-
 
     def sendrecv(self, node_name, msg, on_recv=None):
         """Send a message to a node and receive the reply.
@@ -341,7 +378,6 @@ class Actor(object):
         reply = remote.recv()
         return self._codec.loads(reply)
 
-
     def wake_message_worker(self, msg):
         """Wake a greenlet to handle message with a specific id.
 
@@ -349,7 +385,6 @@ class Actor(object):
 
         """
         self._pendings[msg.id].put(msg)
-
 
     @catch_exceptions(MessageException)
     def on_message(self, msgstring):
@@ -410,26 +445,22 @@ class Actor(object):
                 reply = AckMessage(self.name)
             return self._codec.dumps(reply)
 
+    @catch_exceptions(MessageException)
+    def on_announce(self, msgstring):
+        print msgstring
 
-    def on_message_hello(self, msg):
+    def on_message_hello(self, actor, msg):
         if msg.uri == self._uri or not self._uri:
             return
-        try:
-            self._nodes.add(msg.src, msg.uri)
-        except Exception, err:
-            self._log.error('cannot add node %s with uri "%s": "%s"' % \
-                          (msg.src, msg.uri, str(err)))
-
-
-    def on_message_is_at(self, msg):
         self._nodes.add(msg.src, msg.uri)
 
+    def on_message_is_at(self, actor, msg):
+        self._nodes.add(msg.name, msg.uri)
 
-    def on_message_bye(self, msg):
-        if msg.uri == self._uri:
+    def on_message_bye(self, actor, msg):
+        if msg.src == self.name:
             return
-        self._nodes.remove(msg.src, msg.uri)
-
+        self._nodes.remove(msg.src)
 
 
 class AnnounceServer(object):
@@ -447,48 +478,55 @@ class AnnounceServer(object):
     def __init__(self, config):
         self.name = 'announce.server'
         self._codec = makeCodec({
-                'type': config['codec']
-                })
+                'type': config['codec']})
         self._server = makeNode({
                 'name': self.name,
                 'type': config['type'],
                 'uri':  config['announce']['server_uri'],
-                'role': 'server'
-                },
+                'role': 'server'},
                 self.handle_message)
         self._publisher = makeNode({
                 'name': 'announce.publisher',
                 'type': config['type'],
                 'uri':  config['announce']['pubsub_uri'],
-                'role': 'publish'
-                })
-        self._nodes = NodeDirectory(config)
-        self._log = logging.getLogger(self.name)
+                'role': 'publish'})
 
+        self._nodes = {}  # NodeDirectory(config)
+        self._log = logging.getLogger(self.name)
 
     def start(self):
         self._publisher.start()
         self._server.start()
         poller.register(self._server)
 
+    def stop(self):
+        self._publisher.stop()
+        self._server.stop()
+
+    def __enter__(self):
+        self.start()
+        return self
+
+    def __exit__(self, type, value, traceback):
+        self.stop()
 
     def handle_message(self, msgstring):
         msg = self._codec.loads(msgstring)
+        print repr(msg)
         if msg.type == 'hello':
             self._log.debug('hello from %s' % msg.src)
-            self._nodes.add(msg.src, msg.uri)
+            self._nodes[msg.src] = msg.uri
             reply = AckMessage(self._server.name)
         if msg.type == 'bye':
-            self._nodes.remove(msg.src, msg.uri)
+            del self._nodes[msg.src]
             reply = AckMessage(self._server.name)
         if msg.type == 'where_is':
             if msg.name not in self._nodes:
                 reply = UnknownNodeMessage(msg.name)
             else:
                 node = self._nodes[msg.name]
-                reply = IsAtMessage(msg.name, node.uri)
+                reply = IsAtMessage(msg.name, node)
         return self._codec.dumps(reply)
-
 
 
 class AnnounceClient(object):
@@ -535,50 +573,53 @@ class AnnounceClient(object):
         self._handler = handler
         self._log = logging.getLogger(self.name)
 
-
     @property
     def nodes(self):
         return self._nodes
-
 
     def connect(self):
         if self._subscriber:
             self._subscriber.connect()
         self._client.connect()
 
+    def close(self):
+        if self._subscriber:
+            self._subscriber.close()
+        self._client.close()
 
     def send_to(self, dst, msg):
         self._log.debug('message %s#%d' % (msg.type, msg.id))
         return dst.send(self._codec.dumps(msg))
 
-
     def recv_from(self, src):
         msg = src.recv()
         return self._codec.loads(msg)
-
 
     def hello(self, node):
         msg = HelloMessage(node.name, node.uri)
         self.send_to(self._client, msg)
         return self.recv_from(self._client)
 
-
     def bye(self, node):
         msg = ByeMessage(node.name)
         self.send_to(self._client, msg)
         return self.recv_from(self._client)
-
 
     def where_is(self, other_node_name):
         msg = WhereIsMessage(other_node_name)
         self.send_to(self._client, msg)
         return self.recv_from(self._client)
 
-
     def handle_announce(self, socket, events):
+        """
+        FIXME:
+            - undocumented funtion
+            - neither socket nor events is used
+            - msgstring is undefined
+
         request = self._codec.loads(msgstring)
         self._handler(request)
-
+        """
 
 
 class Poller(object):
@@ -589,10 +630,8 @@ class Poller(object):
     def loop(self):
         raise NotImplementedError()
 
-
     def register(self, node):
         raise NotImplementedError()
-
 
     def poll(self):
         """Warning blocks until a event happens on a monitored socket. Can
@@ -600,11 +639,6 @@ class Poller(object):
 
         """
         raise NotImplementedError()
-
-
-
-class PollerException(Exception):
-    pass
 
 
 class EventPoller(Poller):
@@ -622,13 +656,14 @@ class EventPoller(Poller):
 
     def get_timeout(self):
         return self._old_timeout
+
     def set_timeout(self, timeout):
         self._old_timeout = timeout
     timeout = property(get_timeout, set_timeout)
 
-
     def get_periodic_handler(self):
         return self._old_periodic_handler
+
     def set_periodic_handler(self, handler):
         if self._old_periodic_handler:
             raise PollerException('periodic handler already defined')
@@ -653,18 +688,26 @@ class EventPoller(Poller):
         """
         assert(callable(handler))
         assert(timeout > 0)
-        period = self.spawn(self.periodical_loop, handler, timeout)
+        period = self.spawn(self.periodical_loop,
+                                           handler, timeout)
         self._periodical_handlers.append(period)
 
     def loop(self):
         while self._loop_again:
             gevent.core.loop()
 
+    def stop(self):
+        [g.kill() for g in self._periodical_handlers]
+        self._periodical_handlers = []
+
+        self._old_periodic_handler = None
+        self._old_timeout = None
+
     def periodical_loop(self, handler, timeout):
         """Call the `handler` each `timeout` seconds.
         This method is called in a dedicated greenlet.
 
-        :Parameters:
+            :Parameters:
           handler : callable
             the callable to call each period
           timeout : integer
@@ -692,6 +735,7 @@ class EventPoller(Poller):
         """
         if getattr(node, 'loop', None):
             greenlet = self.spawn(node.loop)
+            return greenlet
 
     def spawn(self, handler, *args, **kwargs):
         """Spawn a new greenlet, and link it to the current greenlet when an
@@ -717,7 +761,8 @@ class EventPoller(Poller):
             name = handler.__name__
         else:
             name = handler.__class__
-        self._log.debug('spawn function %s in greenlet %s' % (name, str(greenlet)))
+        self._log.debug('spawn function %s in greenlet %s' % (name,
+                                                              str(greenlet)))
         assert greenlet is not None
         return greenlet
 
@@ -736,13 +781,15 @@ class EventPoller(Poller):
         to catch exceptions to log them, and re-raise the exception
 
         """
-        from functools import wraps
-        @wraps(handler)
+        # You can's use wraps for callable class (__call__)
+        # furthermore keep signature of the method looks not usefull
+        #from functools import wraps
+        #@wraps(handler)
         def method(*args, **kwargs):
             """Catch exceptions and log them"""
             try:
                 return handler(*args, **kwargs)
-            except Exception, err:
+            except Exception:
                 import traceback
                 map(self._log.error, traceback.format_exc().splitlines())
                 raise
@@ -762,30 +809,18 @@ class ZMQNode(Node):
     type = 'zmq'
 
     def __init__(self, config):
-        self._name = config.get('name', 'ANONYMOUS')
-        self._uri = config['uri']
+        Node.__init__(self, config)
         self._socket = None
         self._lock = gevent.coros.Semaphore()
         self._log = logging.getLogger(self.name)
-
-
-    @property
-    def name(self):
-        return self._name
-
-
-    @property
-    def uri(self):
-        return self._uri
-
 
     @property
     def socket(self):
         return self._socket
 
-
     def send(self, msg):
-        """Send a message
+        """
+        Send a message
         :param  dst: object that contains a send() socket interface
         :param  msg: serializable string
 
@@ -794,7 +829,6 @@ class ZMQNode(Node):
         ret = self._socket.send(msg)
         self._lock.release()
         return ret
-
 
     def recv(self):
         """
@@ -818,57 +852,15 @@ class ZMQNode(Node):
                                  self._uri)
 
 
-def mixIn(target, mixin_class):
-    if mixin_class not in target.__bases__:
-        target.__bases__ = (mixin_class,) + target.__bases__
-    return target
-
-
-
-def makeNode(config, handler=None):
-    dispatch = {'zmq': {
-                'class': ZMQNode,
-                'roles': {
-                    'client':   ZMQClient,
-                    'server':   ZMQServer,
-                    'publish':  ZMQPublish,
-                    'subscribe':ZMQSubscribe}}}
-
-    cls = dispatch[config['type']]['class']
-    if 'role' in config:
-        cls = dispatch[config['type']]['roles'][config['role']]
-
-    return cls(config, handler) if handler else cls(config)
-
-
-
-def makePoller(config):
-    dispatch = {'zmq': EventPoller}
-    return dispatch[config['type']](config)
-
-
-
-class NodeException(Exception):
-    def __init__(self, errmsg, reply):
-        self.errmsg = errmsg
-        self.reply = reply
-
-
-    def __str__(self):
-        return self.errmsg
-
-
-
 class ZMQServer(ZMQNode):
+
     def __init__(self, config, handler):
         ZMQNode.__init__(self, config)
         self._handler = handler
 
-
     def start(self):
         self._socket = _context.socket(zmq.REP)
         self._socket.bind(self._uri)
-
 
     def loop(self):
         while True:
@@ -884,18 +876,23 @@ class ZMQServer(ZMQNode):
             if raw_reply:
                 self._socket.send(raw_reply)
 
-
-
     def send(self, msg):
         raise NotImplementedError()
 
+    def stop(self):
+        self._socket.close()
 
 
 class ZMQClient(ZMQNode):
+
     def connect(self):
         self._socket = _context.socket(zmq.REQ)
         self._socket.connect(self._uri)
-        poller.register(self)
+        # client side do not need to be registred, they are not looping
+        #poller.register(self)
+
+    def close(self):
+        self._socket.close()
 
 
 class ZMQPublish(ZMQNode):
@@ -907,11 +904,13 @@ class ZMQPublish(ZMQNode):
     """
     def start(self):
         self._socket = _context.socket(zmq.PUB)
-
+        self._socket.bind(self._uri)
 
     def recv(self):
         raise NotImplementedError()
 
+    def stop(self):
+        self._socket.close()
 
 
 class ZMQSubscribe(ZMQNode):
@@ -926,13 +925,11 @@ class ZMQSubscribe(ZMQNode):
         ZMQNode.__init__(self, config)
         self._handler = handler
 
-
     def connect(self):
         self._socket = _context.socket(zmq.SUB)
-        self._socket.bind(self._uri)
         self._socket.connect(self._uri)
         self._socket.setsockopt(zmq.SUBSCRIBE, '')
-
+        print self._uri
 
     def loop(self):
         while True:
@@ -940,10 +937,36 @@ class ZMQSubscribe(ZMQNode):
             raw_request = self.recv()
             self._handler(raw_request)
 
-
     def send(self, msg):
-        raise NotImplementedError()
+        raise NotImplementedError
+
+    def close(self):
+        self._socket.close()
+
+# factories function
+
+node_registry = {
+                'zmq': {
+                    'roles': {
+                        'client':   ZMQClient,
+                        'server':   ZMQServer,
+                        'publish':  ZMQPublish,
+                        'subscribe': ZMQSubscribe
+                        }}}
 
 
+def registerNode(name, config):
+    node_registry[name] = config
 
+
+def makeNode(config, handler=None):
+    cls = node_registry[config['type']]['roles'][config['role']]
+    return cls(config, handler) if handler else cls(config)
+
+
+def makePoller(config):
+    dispatch = {'zmq': EventPoller}
+    return dispatch[config['type']](config)
+
+# create the poller
 poller = EventPoller({})

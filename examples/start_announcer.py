@@ -18,7 +18,7 @@ if __name__ == '__main__':
     stream.setFormatter(formatter)
     logger.addHandler(stream)
     common_config = yaml.load(file('config.yaml'))
+    
     announce_server_config = common_config
-    announcer = node.AnnounceServer(announce_server_config)
-    announcer.start()
-    node.poller.wait()
+    with node.AnnounceServer(announce_server_config):
+        node.poller.wait()

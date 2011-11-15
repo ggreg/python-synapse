@@ -1,132 +1,117 @@
+#!/usr/bin/env python
+# -*- coding: utf8 -*-
+
 import random
 import simplejson as json
-
 
 
 class MessageException(Exception):
     pass
 
 
-
 class MessageInvalidException(MessageException):
     def __init__(self, msg):
         self._msg = msg
 
-
     def __str__(self):
         return 'message invalid : "%s"' % str(self._msg)
-
 
 
 class CodecException(Exception):
     pass
 
 
-
 class CodecInvalidException(CodecException):
     def __init__(self, key):
         self._key = key
 
-
     def __str__(self):
-        return 'codec "%s" is not supported' % self._key
-
+        return 'codec %s is not supported' % self._key
 
 
 class Message(object):
     def __init__(self, id=None):
         self._id = id
 
-
     @property
     def id(self):
         if not self._id:
             rand_min = 0
-            rand_max = 2**32
+            rand_max = 2 ** 32
 
             self._id = random.randint(rand_min, rand_max)
         return self._id
 
 
-
 class ReplyMessage(Message):
     type = 'reply'
+
     def __init__(self, src, data, id):
         Message.__init__(self, id)
         self.src = src
         self.data = data
 
-
     @property
     def attrs(self):
-        return {
-            'src': self.src,
-            'data': self.data}
-
+        return {'src': self.src,
+                'data': self.data}
 
 
 class HelloMessage(Message):
     type = 'hello'
+
     def __init__(self, src, uri, id=None):
         Message.__init__(self, id)
         self.src = src
         self.uri = uri
 
-
     @property
     def attrs(self):
-        return {
-            'src': self.src,
-            'uri': self.uri}
-
+        return {'src': self.src,
+                'uri': self.uri}
 
 
 class ByeMessage(Message):
     type = 'bye'
+
     def __init__(self, src, id=None):
         Message.__init__(self, id)
         self.src = src
 
-
     @property
     def attrs(self):
-        return {
-            'src': self.src}
-
+        return {'src': self.src}
 
 
 class WhereIsMessage(Message):
     type = 'where_is'
+
     def __init__(self, name, id=None):
         Message.__init__(self, id)
         self.name = name
 
-
     @property
     def attrs(self):
-        return {
-            'name': self.name}
-
+        return {'name': self.name}
 
 
 class IsAtMessage(Message):
     type = 'is_at'
+
     def __init__(self, name, uri, id=None):
         Message.__init__(self, id)
         self.name = name
         self.uri = uri
 
-
     @property
     def attrs(self):
-        return {
-            'name': self.name,
-            'uri': self.uri}
-
+        return {'name': self.name,
+                'uri': self.uri}
 
 
 class UnknownNodeMessage(Message):
     type = 'unknown_node'
+
     def __init__(self, name, id=None):
         super(UnknownNodeMessage, self).__init__(id)
         self.name = name
@@ -136,23 +121,21 @@ class UnknownNodeMessage(Message):
         return {'name': self.name}
 
 
-
 class AckMessage(Message):
     type = 'ack'
+
     def __init__(self, src, id=None):
         Message.__init__(self, id)
         self.src = src
 
-
     @property
     def attrs(self):
-        return {
-            'src': self.src}
-
+        return {'src': self.src}
 
 
 class NackMessage(Message):
     type = 'nack'
+
     def __init__(self, src, msg, id=None):
         Message.__init__(self, id)
         self.src = src
@@ -160,20 +143,17 @@ class NackMessage(Message):
 
     @property
     def attrs(self):
-        return {
-            'src': self.src,
-            'msg': self.msg}
-
+        return {'src': self.src,
+                'msg': self.msg}
 
 
 class MessageCodec(object):
+
     def loads(self, msgstring):
         raise NotImplementedError()
 
-
     def dumps(self, msg):
         raise NotImplementedError()
-
 
 
 class DateTimeJSONEncoder(json.JSONEncoder):
@@ -194,16 +174,14 @@ class DateTimeJSONEncoder(json.JSONEncoder):
                 isinstance(obj, datetime.time):
             return obj.isoformat()
         elif isinstance(obj, xmlrpclib.DateTime):
-            return datetime.datetime.strptime(obj.value, "%Y-%m-%d %H:%M:%S.%f")
+            return datetime.datetime.strptime(obj.value, "%Y%m%dT%H:%M:%S")
         else:
             return super(self.__class__, self).default(obj)
-
 
 
 class MessageCodecJSONRPC(MessageCodec):
     def __init__(self, config):
         pass
-
 
     def loads(self, msgstring):
         try:
@@ -218,7 +196,6 @@ class MessageCodecJSONRPC(MessageCodec):
         except Exception, err:
             raise CodecException(str(err))
 
-
     def dumps(self, msg):
         try:
             jsonrpc_msg = {
@@ -231,17 +208,13 @@ class MessageCodecJSONRPC(MessageCodec):
             raise CodecException(str(err))
 
 
-
 def makeCodec(config):
-    dispatch = {
-        'jsonrpc': MessageCodecJSONRPC,
-    }
+    dispatch = {'jsonrpc': MessageCodecJSONRPC}
     try:
         codec_instance = dispatch[config['type']](config)
     except KeyError, err:
         raise CodecInvalidException(err)
     return codec_instance
-
 
 
 def makeMessage(msg):
@@ -258,6 +231,7 @@ def makeMessage(msg):
     del msgtmp['type']
     try:
         message_instance = dispatch[msgtype](**msgtmp)
-    except TypeError, err:
-        raise MessageInvalidException()
+    except KeyError:
+        raise MessageInvalidException("%s is not a subclass of Message" %
+                                      msgtype)
     return message_instance
